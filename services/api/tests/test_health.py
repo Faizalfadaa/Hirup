@@ -23,6 +23,7 @@ async def test_health_returns_ok_with_unknown_data_age(client: httpx.AsyncClient
         "version": version("hirup"),
         "model_version": None,
         "data_age_seconds": None,
+        "data_quality": "real",
     }
 
 
