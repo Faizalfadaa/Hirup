@@ -1,0 +1,12 @@
+{
+  "configVersion": "hirup-pilot-1",
+  "routingDefaults": {
+    "walk": {
+      "speed": 1.2
+    },
+    "bicycle": {
+      "speed": 4.2
+    },
+    "numItineraries": 5
+  }
+}

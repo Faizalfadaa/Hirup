@@ -1,0 +1,6 @@
+{
+  "configVersion": "hirup-pilot-1",
+  "otpFeatures": {
+    "GtfsGraphQlApi": true
+  }
+}
