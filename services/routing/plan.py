@@ -2,9 +2,8 @@
 
 import asyncio
 from collections.abc import Sequence
-from dataclasses import replace
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
-from itertools import pairwise
 from typing import Protocol, cast
 
 import numpy as np
@@ -13,11 +12,25 @@ from services.exposure.aq_provider import (
     AQProvider,
     AQUnavailableError,
     OutOfServiceAreaError,
+    Pm25Samples,
 )
 from services.exposure.engine import LegInput, Mode, WaitPlace, trip_exposure
-from services.exposure.geometry import BoundingBox, Point, distance_m, hour_key, sample_polyline
+from services.exposure.geometry import (
+    BoundingBox,
+    FloatArray,
+    Point,
+    hour_key,
+    sample_polyline,
+    segment_lengths,
+)
 from services.exposure.params import ExposureParams
-from services.routing.active_router import ActiveMode, ActiveRoute, ActiveRouter, NoActiveRouteError
+from services.routing.active_router import (
+    ActiveMode,
+    ActiveRoute,
+    ActiveRouter,
+    ActiveSearches,
+    NoActiveRouteError,
+)
 from services.routing.gtfs import GtfsHeadways
 from services.routing.models import (
     Candidate,
@@ -32,6 +45,15 @@ from services.routing.rerank import RankingParams, select
 
 class CandidateRouter(Protocol):
     async def candidates(self, query: Query) -> tuple[Candidate, ...]: ...
+
+
+@dataclass
+class _ScoringContext:
+    # Request-owned only: no geometry, timestamps or AQ samples persist on Planner.
+    geometry: dict[tuple[Point, ...], tuple[tuple[Point, ...], FloatArray, FloatArray]] = field(
+        default_factory=dict
+    )
+    samples: dict[tuple[tuple[Point, ...], datetime], Pm25Samples] = field(default_factory=dict)
 
 
 class ActiveCandidates:
@@ -118,42 +140,13 @@ class Planner:
     async def plan(self, query: Query) -> PlanResult:
         if not self.bounds.contains(query.origin) or not self.bounds.contains(query.destination):
             raise OutOfServiceAreaError("Origin or destination is outside the pilot service area")
-        jobs = []
-        if query.mode in {"transit", "all"}:
-            jobs.append(self.transit.candidates(query))
-        if query.mode in {"walk", "bike", "all"}:
-            jobs.append(self.active.candidates(query))
-        # Execute road comparisons concurrently with transit/active generation.
-        road_jobs = (
-            [self.motorcycle.candidates(query), self.car.candidates(query)]
-            if query.include_comparison
-            else []
+        # Road scoring starts as soon as OSRM returns, while OTP is still searching.
+        scored, comparisons = await asyncio.gather(
+            self._main_scored(query), self._comparisons(query)
         )
-        batches = await asyncio.gather(*jobs, *road_jobs)
-        main_batches = batches[: len(jobs)]
-        candidates = [item for batch in main_batches for item in batch]
-        prepared = []
-        for candidate in candidates:
-            waited = self._waits(candidate, query)
-            if waited is not None:
-                prepared.append(waited)
-        # Expensive graph/raster work runs off the event loop, bounded to this request.
-        scored = await asyncio.to_thread(self._score_many, prepared)
-        # Optimization is opportunistic: no cold hourly refresh inside a request.
-        if self.active_router is not None:
-            optimized = await asyncio.to_thread(self._optimize_many, prepared, query)
-            scored.extend(await asyncio.to_thread(self._score_many, optimized))
         options = select(scored, self.ranking[query.profile])
         if not options:
             raise AQUnavailableError("No route has both routing and current AQ coverage")
-        comparisons: list[ScoredCandidate | None] = []
-        for batch in batches[len(jobs) :]:
-            scored_roads = await asyncio.to_thread(self._score_many, batch)
-            comparisons.append(
-                min(scored_roads, key=lambda item: item.candidate.duration_s)
-                if scored_roads
-                else None
-            )
         motorcycle, car = comparisons if comparisons else (None, None)
         qualities = [option.scored.data_quality for option in options]
         qualities.extend(item.data_quality for item in comparisons if item is not None)
@@ -165,6 +158,52 @@ class Planner:
             options[0].scored.model_version,
             worst_quality(*qualities),
         )
+
+    async def _main_scored(self, query: Query) -> list[ScoredCandidate]:
+        jobs = []
+        if query.mode in {"transit", "all"}:
+            jobs.append(self.transit.candidates(query))
+        if query.mode in {"walk", "bike", "all"}:
+            jobs.append(self.active.candidates(query))
+        batches = await asyncio.gather(*jobs)
+        candidates = [item for batch in batches for item in batch]
+        prepared = []
+        for candidate in candidates:
+            waited = self._waits(candidate, query)
+            if waited is not None:
+                prepared.append(waited)
+        # Expensive graph/raster work runs off the event loop, bounded to this request.
+        context = _ScoringContext()
+        if self.active_router is not None:
+            scored, optimized = await asyncio.gather(
+                asyncio.to_thread(self._score_many, prepared, context),
+                asyncio.to_thread(self._optimize_many, prepared, query),
+            )
+            # The same context is reused only after the original scorer has finished.
+            scored.extend(await asyncio.to_thread(self._score_many, optimized, context))
+        else:
+            scored = await asyncio.to_thread(self._score_many, prepared, context)
+        return scored
+
+    async def _comparisons(self, query: Query) -> list[ScoredCandidate | None]:
+        if not query.include_comparison:
+            return []
+
+        async def compare(router: CandidateRouter) -> ScoredCandidate | None:
+            batch = await router.candidates(query)
+            return await asyncio.to_thread(self._best_road, batch)
+
+        return list(await asyncio.gather(compare(self.motorcycle), compare(self.car)))
+
+    def _best_road(self, batch: Sequence[Candidate]) -> ScoredCandidate | None:
+        context = _ScoringContext()
+        # Stable sorting retains ties. An uncovered faster alternative must still
+        # fall through to the next; later covered alternatives cannot win.
+        for candidate in sorted(batch, key=lambda item: item.duration_s):
+            covered = self._score_many((candidate,), context)
+            if covered:
+                return covered[0]
+        return None
 
     def _waits(self, candidate: Candidate, query: Query) -> Candidate | None:
         legs: list[RouteLeg] = []
@@ -205,6 +244,7 @@ class Planner:
         result = []
         # This memo lives only until this request finishes; detour limits remain per leg.
         paths: dict[tuple[Point, Point, datetime, Mode], tuple[ActiveRoute, ...] | None] = {}
+        searches = ActiveSearches()
         for candidate in candidates:
             if not any(leg.route is not None for leg in candidate.legs):
                 continue
@@ -217,11 +257,16 @@ class Planner:
                         key = (leg.points[0], leg.points[-1], hour_key(clock), leg.mode)
                         if key not in paths:
                             try:
-                                paths[key] = router.plan(
+                                arguments = (
                                     leg.points[0],
                                     leg.points[-1],
                                     clock,
                                     cast(ActiveMode, leg.mode.value),
+                                )
+                                paths[key] = (
+                                    router.plan(*arguments, searches=searches)
+                                    if isinstance(router, ActiveRouter)
+                                    else router.plan(*arguments)
                                 )
                             except (AQUnavailableError, NoActiveRouteError, OutOfServiceAreaError):
                                 paths[key] = None
@@ -261,7 +306,10 @@ class Planner:
                 )
         return result
 
-    def _score_many(self, candidates: Sequence[Candidate]) -> list[ScoredCandidate]:
+    def _score_many(
+        self, candidates: Sequence[Candidate], context: _ScoringContext | None = None
+    ) -> list[ScoredCandidate]:
+        context = context if context is not None else _ScoringContext()
         result = []
         for candidate in candidates:
             inputs: list[LegInput] = []
@@ -270,10 +318,21 @@ class Planner:
             clock = candidate.depart_at
             try:
                 for leg in candidate.legs:
-                    points = sample_polyline(leg.points, self.sample_spacing_m)
-                    samples = self.aq.sample(points, clock)
-                    if len(samples.p50) != len(points) or samples.valid_hour != hour_key(clock):
-                        raise AQUnavailableError("AQ sample hour/count differs from route leg")
+                    if leg.points not in context.geometry:
+                        points = sample_polyline(leg.points, self.sample_spacing_m)
+                        cumulative = np.concatenate(([0.0], np.cumsum(segment_lengths(leg.points))))
+                        sample_positions = np.minimum(
+                            np.arange(len(points)) * self.sample_spacing_m, cumulative[-1]
+                        )
+                        context.geometry[leg.points] = points, cumulative, sample_positions
+                    points, cumulative, sample_positions = context.geometry[leg.points]
+                    sample_key = (leg.points, clock)
+                    if sample_key not in context.samples:
+                        samples = self.aq.sample(points, clock)
+                        if len(samples.p50) != len(points) or samples.valid_hour != hour_key(clock):
+                            raise AQUnavailableError("AQ sample hour/count differs from route leg")
+                        context.samples[sample_key] = samples
+                    samples = context.samples[sample_key]
                     mean = samples.mean()
                     if not inputs:
                         model_version = samples.model_version
@@ -287,12 +346,6 @@ class Planner:
                         )
                     )
                     # Interpolate the sampled concentration onto geometry segment midpoints.
-                    cumulative = np.concatenate(
-                        ([0.0], np.cumsum([distance_m(a, b) for a, b in pairwise(leg.points)]))
-                    )
-                    sample_positions = np.minimum(
-                        np.arange(len(points)) * self.sample_spacing_m, cumulative[-1]
-                    )
                     values = (
                         tuple(
                             float(v)

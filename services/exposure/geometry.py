@@ -75,23 +75,38 @@ def polyline_length(points: Sequence[Point]) -> float:
     return sum(distance_m(a, b) for a, b in pairwise(points))
 
 
+def segment_lengths(points: Sequence[Point]) -> FloatArray:
+    """Geodesic distances in one native call, including duplicate vertices."""
+    if len(points) < 2:
+        return np.empty(0, dtype=np.float64)
+    lon = np.asarray([p.lon for p in points], dtype=np.float64)
+    lat = np.asarray([p.lat for p in points], dtype=np.float64)
+    return np.asarray(GEOD.inv(lon[:-1], lat[:-1], lon[1:], lat[1:])[2], dtype=np.float64)
+
+
 def sample_polyline(points: Sequence[Point], spacing_m: float) -> tuple[Point, ...]:
     """Include both endpoints and globally spaced samples, not per-edge restarts."""
     if not points:
         raise ValueError("Polyline must contain a point")
     if not math.isfinite(spacing_m) or spacing_m <= 0:
         raise ValueError("Sample spacing must be finite and positive")
-    sampled = [points[0]]
-    traversed = 0.0
-    next_sample = spacing_m
-    for a, b in pairwise(points):
-        bearing, _, length = GEOD.inv(a.lon, a.lat, b.lon, b.lat)
-        length = float(length)
-        while next_sample < traversed + length:
-            lon, lat, _ = GEOD.fwd(a.lon, a.lat, bearing, next_sample - traversed)
-            sampled.append(Point(float(lon), float(lat)))
-            next_sample += spacing_m
-        traversed += length
+    if len(points) == 1:
+        return (points[0],)
+    lon = np.asarray([p.lon for p in points], dtype=np.float64)
+    lat = np.asarray([p.lat for p in points], dtype=np.float64)
+    bearings, _, lengths = GEOD.inv(lon[:-1], lat[:-1], lon[1:], lat[1:])
+    cumulative = np.concatenate(([0.0], np.cumsum(lengths)))
+    positions = np.arange(1, math.ceil(cumulative[-1] / spacing_m)) * spacing_m
+    positions = positions[positions < cumulative[-1]]
+    # Right-side lookup skips zero-length vertices and samples on vertex boundaries.
+    indices = np.searchsorted(cumulative, positions, side="right") - 1
+    sampled_lon, sampled_lat, _ = GEOD.fwd(
+        lon[indices], lat[indices], bearings[indices], positions - cumulative[indices]
+    )
+    sampled = [
+        points[0],
+        *(Point(float(x), float(y)) for x, y in zip(sampled_lon, sampled_lat, strict=True)),
+    ]
     if distance_m(sampled[-1], points[-1]) > 1e-6:
         sampled.append(points[-1])
     else:

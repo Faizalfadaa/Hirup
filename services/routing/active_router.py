@@ -3,7 +3,7 @@
 import math
 import threading
 from collections.abc import Sequence
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from itertools import pairwise
 from operator import itemgetter
@@ -59,6 +59,16 @@ class _Snapshot:
     cell_samples: Pm25Samples
     networks: dict[tuple[ActiveMode, float], Any]
     costs: dict[tuple[ActiveMode, float], FloatArray]
+
+
+@dataclass
+class ActiveSearches:
+    """Shortest paths shared only within a caller's request, never on the router."""
+
+    snapshot: _Snapshot | None = None
+    edges: dict[tuple[ActiveMode, int, int, float], tuple[int, ...] | None] = field(
+        default_factory=dict
+    )
 
 
 class ActiveRouter:
@@ -193,10 +203,16 @@ class ActiveRouter:
             return (origin,), 0.0, 0.0
         start, end = self._nearest(origin, mode), self._nearest(destination, mode)
         network, costs = self._networks[mode], self._cost_bases[mode]
+        with self._lock:
+            snapshot = self._snapshot
+        # Lambda zero is exactly the static travel-time cost, independent of AQ
+        # hour/publication. Reuse its native float weights without sampling AQ.
+        search_network = snapshot.networks[mode, 0] if snapshot is not None else network
+        weight_fn = float if snapshot is not None else costs.__getitem__
         paths = (
             {end: [start]}
             if start == end
-            else rx.dijkstra_shortest_paths(network, start, target=end, weight_fn=costs.__getitem__)
+            else rx.dijkstra_shortest_paths(search_network, start, target=end, weight_fn=weight_fn)
         )
         if end not in paths:
             raise NoActiveRouteError("No connected path for the requested active mode")
@@ -220,7 +236,13 @@ class ActiveRouter:
         return tuple(points), distance, distance / speed
 
     def plan(
-        self, origin: Point, destination: Point, ts: datetime, mode: ActiveMode = "WALK"
+        self,
+        origin: Point,
+        destination: Point,
+        ts: datetime,
+        mode: ActiveMode = "WALK",
+        *,
+        searches: ActiveSearches | None = None,
     ) -> tuple[ActiveRoute, ...]:
         if mode not in {"WALK", "BICYCLE"}:
             raise ValueError("Active mode must be WALK or BICYCLE")
@@ -230,6 +252,10 @@ class ActiveRouter:
             snapshot = self._snapshot
         if snapshot is None or snapshot.valid_hour != hour_key(ts):
             raise AQUnavailableError("Refresh active graph AQ for this hour before routing")
+        searches = searches if searches is not None else ActiveSearches()
+        if searches.snapshot is not snapshot:
+            searches.edges.clear()
+            searches.snapshot = snapshot
         start, end = self._nearest(origin, mode), self._nearest(destination, mode)
         base_network = self._networks[mode]
         speed = self.params.walk_speed_m_s if mode == "WALK" else self.params.bike_speed_m_s
@@ -238,26 +264,34 @@ class ActiveRouter:
         for weight in sorted(self.params.lambdas):
             network = snapshot.networks[mode, weight]
             costs = snapshot.costs[mode, weight]
-            paths = (
-                {end: [start]}
-                if start == end
-                else rx.dijkstra_shortest_paths(network, start, target=end, weight_fn=float)
-            )
-            if end not in paths:
+            key = (mode, start, end, weight)
+            if key not in searches.edges:
+                paths = (
+                    {end: [start]}
+                    if start == end
+                    else rx.dijkstra_shortest_paths(network, start, target=end, weight_fn=float)
+                )
+                # rustworkx PathMapping supports membership/indexing, not dict.get.
+                node_path: Sequence[int] = paths[end] if end in paths else ()  # noqa: SIM401
+                searches.edges[key] = (
+                    tuple(
+                        min(
+                            (
+                                (float(costs[index]), index)
+                                for index in base_network.get_all_edge_data(a, b)
+                            ),
+                            key=itemgetter(0),
+                        )[1]
+                        for a, b in pairwise(node_path)
+                    )
+                    if node_path
+                    else None
+                )
+            edges = searches.edges[key]
+            if edges is None:
                 if weight == 0:
                     raise NoActiveRouteError("No connected path for the requested active mode")
                 continue
-            node_path: Sequence[int] = paths[end]
-            edges = tuple(
-                min(
-                    (
-                        (float(costs[index]), index)
-                        for index in base_network.get_all_edge_data(a, b)
-                    ),
-                    key=itemgetter(0),
-                )[1]
-                for a, b in pairwise(node_path)
-            )
             points: list[Point] = [origin]
             start_point = self.graph.nodes[self._node_ids[mode][start]]
             if points[-1] != start_point:

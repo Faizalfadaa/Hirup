@@ -646,3 +646,101 @@ cached advice to one slot at a time, the full direct runner passed 12/12 windows
 baseline and remains a user-experience/performance concern; reliability of this
 local replay does not establish production availability. Repeated identical advice
 can use its plan cache, but this run measures fresh windows, not cache hits.
+
+### T6.3: cold-plan profiling and optimization
+
+Run an explicitly cold plan-cache replay, with optional per-stage wall times:
+
+```bash
+make -f infra/Makefile golden-od GOLDEN_ARGS="--date 2026-10-14 --demo-min-pm25 10 --demo-max-pm25 80 --reference-pm25 40 --trunk-penalty 2 --cold-cache --profile-stages --output data/benchmarks/plan-profile.json"
+```
+
+`--cold-cache` clears both plan caches before each recorded request. Each of the
+three slots still has one excluded JVM warm-up; all 30 measured plans are cache
+misses, and the counters show 33 misses and zero hits. Graph startup and hourly
+preparation are excluded. `--profile-stages` temporarily instruments the local
+runtime and restores its methods afterwards, including on failure. Without this
+flag the profiling wrappers are absent. The report contains public OD IDs,
+status, latency, response fingerprints and stage times, rather than user location
+logs. Nested and concurrent stage times overlap and must not be summed.
+
+The original cold replay passed 30/30 with p50 988.3 ms/p95 4,304.1 ms. The slowest
+public OD had approximately 2.2–3.3 s in OTP, 0.8–1.0 s in active optimization,
+and 0.7–1.0 s in scoring. Much of the scoring time was the seeded synthetic AQ
+provider; this timing does not represent production COG reads.
+
+The implementation keeps the OTP mode/reluctance variants, five itineraries,
+15-minute runtime search window, 25 m sampling, scientific parameters, and ranking
+rules. It uses vectorized geodesic inverse/forward operations; request-owned
+geometry and exact-time AQ sample memos; request-owned graph paths keyed by nodes,
+mode, lambda and immutable AQ snapshot; and overlapping original scoring/active
+optimization. Connector geometry and each leg's detour limits are recomputed.
+Snapshot changes clear graph search reuse even within the same hour. No such
+memo survives a request on the planner or active router.
+
+For geometry-only fallback in hours whose AQ graph is not prepared, the router
+can also reuse an already loaded lambda-zero graph's native float weights. Those
+weights are exactly the static travel-time/trunk-preference costs and contain no
+hourly pollution weighting. AQ is still sampled at each leg's requested time in
+the scorer. If no snapshot has ever been prepared, the original base network is
+used. Tests verify identical fallback paths/durations before and after different
+hourly publications for both active modes, without extra AQ reads.
+
+Road comparisons are scored while OTP is searching. Alternatives are evaluated
+in stable duration order until the first with AQ coverage, preserving fastest
+covered selection and ties while avoiding scoring slower covered alternatives.
+The main and road workers own separate scoring contexts; original and optimized
+main candidates share a context only after the original scorer has finished.
+
+Intermediate 30-case cold replays all passed: p95 3,649.9 ms after geometry/scoring
+reuse, 3,315.6 ms after overlapping road work and graph search reuse, and 3,068.4 ms
+after overlapping main scoring/optimization. These are separate local runs and
+include normal OTP/host timing variation; they are not production capacity claims.
+The 3-second target was still missed in these runs.
+
+Numerical tests compare scalar and vectorized geodesics to within 1 micrometre,
+including duplicates, short segments, noninteger spacing and a dateline crossing.
+A local diagnostic replay also fixes the generated candidates for the heaviest
+public OD, three slots and both profiles: all six responses match the previous
+main implementation in geometry, labels and data provenance, with numeric
+tolerance max(1e-8, abs(value) * 1e-12). One separate live OTP run produced a
+different option count; identical-candidate replay prevents that upstream
+variation from hiding a scoring regression.
+
+The final source replay passes 30/30 cold plans and 122/122 cache/burst requests.
+The comparable local measurements are:
+
+| Measurement | Before | Final |
+| --- | --- | --- |
+| Cold plan, 30 cases, p50 | 988.3 ms | 816.9 ms |
+| Cold plan, 30 cases, p95 | 4,304.1 ms | 4,315.9 ms |
+| Dedicated cold plan, 10 cases, p95 | 3,317.4 ms | 3,234.5 ms |
+| 100 cache hits, p95 | 13.70 ms | 21.69 ms |
+| Eight identical concurrent misses, p95 | 1,043.1 ms | 1,284.4 ms |
+| Four distinct concurrent misses, p95 | 6,124.9 ms | 3,795.8 ms |
+
+The final AQ-point p95 is 7.04 ms. The identical burst still performs one upstream
+plan with seven joined callers. The distinct burst meets the 5-second Must target
+in this small sample, while the final cold 30-case p95 is effectively unchanged.
+The earlier 3,068.4 ms replay does not establish a consistent 3-second Should
+result. Cached and identical-burst timings also varied and were higher in the
+final run; they are reported rather than omitted. New-search tail latency remains
+open and should be reassessed with production AQ and the deployed routing host.
+
+Advice regression passed 12/12 windows with 13 slots each, across both profiles
+and transit/walk/bike. Its first post-optimization run measured p95 18,959.5 ms.
+After lambda-zero fallback reuse, the final replay measured p50 10,248.2 ms/p95
+12,876.6 ms, versus the T6.2 p95 13,937.2 ms. Timing variation remains visible;
+this is a local regression check, not an advice SLA or availability guarantee.
+The lambda-zero change affects geometry fallback; the cold transit golden/cache
+cohorts above do not invoke that fallback.
+
+Final source checks pass: Ruff lint and format (102 files), strict mypy (55 source
+files), and 296 non-integration tests including both live OSRM profiles, with
+three marked Docker integrations deselected and exercised by the direct runners
+above. Existing rasterio/NumPy deprecation warnings remain. Contract/schema and
+dependency lock files are unchanged.
+
+PostgreSQL/PostGIS and new Rust/Go services remain deferred. Existing native
+geodesic/graph libraries are used, with no new dependencies or data downloads.
+Production P2 rasters, a deployed VM, and sustained load still require validation.
