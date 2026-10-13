@@ -1,10 +1,19 @@
 from datetime import UTC, datetime
+from itertools import pairwise
 from pathlib import Path
 
+import numpy as np
 import pytest
 import yaml
 
-from services.exposure.geometry import GEOD, Point, distance_m, hour_key, sample_polyline
+from services.exposure.geometry import (
+    GEOD,
+    Point,
+    distance_m,
+    hour_key,
+    sample_polyline,
+    segment_lengths,
+)
 from services.routing.active_params import DEFAULT_PATH, load_active_params
 
 
@@ -25,6 +34,54 @@ def test_duplicate_and_zero_length_geometry() -> None:
     point = Point(106.8, -6.2)
     assert sample_polyline((point, point), 25) == (point,)
     assert len(sample_polyline((point, point, east(point, 50)), 25)) == 3
+
+
+def scalar_reference(points, spacing):
+    sampled, traversed, next_sample = [points[0]], 0.0, spacing
+    for a, b in pairwise(points):
+        bearing, _, length = GEOD.inv(a.lon, a.lat, b.lon, b.lat)
+        while next_sample < traversed + length:
+            lon, lat, _ = GEOD.fwd(a.lon, a.lat, bearing, next_sample - traversed)
+            sampled.append(Point(lon, lat))
+            next_sample += spacing
+        traversed += length
+    if distance_m(sampled[-1], points[-1]) > 1e-6:
+        sampled.append(points[-1])
+    else:
+        sampled[-1] = points[-1]
+    return tuple(sampled)
+
+
+@pytest.mark.parametrize("spacing", [7.3, 25, 10000])
+def test_vector_sampling_matches_scalar_geodesics_and_endpoints(spacing) -> None:
+    rng = np.random.default_rng(20261013)
+    for _ in range(20):
+        vertices = [Point(106.8, -6.2)]
+        for _ in range(8):
+            previous = vertices[-1]
+            lon, lat, _ = GEOD.fwd(
+                previous.lon,
+                previous.lat,
+                float(rng.uniform(-180, 180)),
+                float(rng.choice([0, 10, 25, 500])),
+            )
+            vertices.append(Point(lon, lat))
+        actual = sample_polyline(vertices, spacing)
+        expected = scalar_reference(vertices, spacing)
+        assert len(actual) == len(expected)
+        assert max(distance_m(a, b) for a, b in zip(actual, expected, strict=True)) < 1e-6
+        assert actual[0] == vertices[0]
+        assert actual[-1] == vertices[-1]
+        assert segment_lengths(vertices) == pytest.approx(
+            [distance_m(a, b) for a, b in pairwise(vertices)], abs=1e-8
+        )
+
+
+def test_vector_sampling_across_dateline() -> None:
+    points = (Point(179.999, 70), Point(-179.999, 70), Point(-179.998, 70.001))
+    actual, expected = sample_polyline(points, 25), scalar_reference(points, 25)
+    assert len(actual) == len(expected)
+    assert max(distance_m(a, b) for a, b in zip(actual, expected, strict=True)) < 1e-6
 
 
 @pytest.mark.parametrize("spacing", [0, -1, float("nan"), float("inf")])

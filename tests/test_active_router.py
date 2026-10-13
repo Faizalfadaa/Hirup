@@ -10,7 +10,7 @@ from services.exposure.aq_provider import AQUnavailableError, Pm25Samples
 from services.exposure.geometry import BoundingBox, Point, hour_key, unproject
 from services.routing.active_graph import GraphData, RoadEdge, load_graph, save_graph
 from services.routing.active_params import load_active_params
-from services.routing.active_router import ActiveRouter, NoActiveRouteError
+from services.routing.active_router import ActiveRouter, ActiveSearches, NoActiveRouteError
 
 TS = datetime.fromisoformat("2026-10-14T08:00:00+07:00")
 BOUNDS = BoundingBox(-6.3, -6.13, 106.76, 106.85)
@@ -209,3 +209,59 @@ def test_baseline_geometry_does_not_read_aq_or_use_stale_weights() -> None:
     assert aq.calls == 0
     with pytest.raises(NoActiveRouteError):
         router.base_path(data.nodes[3], data.nodes[0])
+
+
+def test_request_paths_reuse_nodes_but_recompute_connectors_and_modes(monkeypatch) -> None:
+    import rustworkx as rx
+
+    data = graph()
+    router = router_for(data)
+    searches = ActiveSearches()
+    original, calls = rx.dijkstra_shortest_paths, []
+
+    def counted(*args, **kwargs):
+        calls.append(1)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(rx, "dijkstra_shortest_paths", counted)
+    router.plan(data.nodes[0], data.nodes[3], TS, searches=searches)
+    assert len(calls) == 4
+    nearby = unproject(699001, 9313900)
+    reused = router.plan(nearby, data.nodes[3], TS, searches=searches)
+    assert len(calls) == 4
+    assert reused[0].points[0] == nearby
+    assert reused[0].distance_m == pytest.approx(201, abs=0.001)
+    reference = router.plan(nearby, data.nodes[3], TS)
+    assert reused == reference
+    assert len(calls) == 8
+    router.plan(nearby, data.nodes[3], TS, "BICYCLE", searches=searches)
+    assert len(calls) == 12
+
+
+def test_request_paths_invalidate_on_same_hour_publication_and_cache_no_path() -> None:
+    data, aq = graph(), FakeAQ()
+    router, searches = router_for(data, aq), ActiveSearches()
+    before = router.plan(data.nodes[0], data.nodes[3], TS, searches=searches)
+    aq.flip = True
+    router.refresh_aq(TS, 40)
+    after = router.plan(data.nodes[0], data.nodes[3], TS, searches=searches)
+    assert len(before) == 2
+    assert len(after) == 1
+    assert after == router.plan(data.nodes[0], data.nodes[3], TS)
+    for _ in range(2):
+        with pytest.raises(NoActiveRouteError):
+            router.plan(data.nodes[3], data.nodes[0], TS, searches=searches)
+
+
+@pytest.mark.parametrize("mode", ["WALK", "BICYCLE"])
+def test_static_fallback_reuses_zero_weight_graph_without_stale_pollution(mode) -> None:
+    data, aq = graph(highway="trunk"), FakeAQ()
+    router = ActiveRouter(data, load_active_params(), aq, trunk_penalty_factor=2)
+    original = router.base_path(data.nodes[0], data.nodes[3], mode)
+    router.refresh_aq(TS, 40)
+    first = router.base_path(data.nodes[0], data.nodes[3], mode)
+    aq.flip = True
+    router.refresh_aq(TS + timedelta(hours=1), 40)
+    later = router.base_path(data.nodes[0], data.nodes[3], mode)
+    assert original == first == later
+    assert aq.calls == 2  # Only explicit hourly refreshes sample AQ.
