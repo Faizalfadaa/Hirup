@@ -40,6 +40,8 @@ class Pm25Samples:
     valid_hour: datetime
     data_quality: DataQuality
     source: str
+    model_version: str | None = None
+    generated_at: datetime | None = None
 
     def __post_init__(self) -> None:
         arrays = [np.array(a, dtype=np.float64, copy=True) for a in (self.p10, self.p50, self.p90)]
@@ -55,6 +57,8 @@ class Pm25Samples:
             array.setflags(write=False)
             object.__setattr__(self, name, array)
         object.__setattr__(self, "valid_hour", hour_key(self.valid_hour))
+        if self.generated_at is not None and self.generated_at.utcoffset() is None:
+            raise ValueError("AQ generation timestamp must include a timezone")
 
     def mean(self) -> Quantiles:
         if not len(self.p50):
@@ -200,7 +204,16 @@ class CogAQProvider:
                 raise AQUnavailableError("Point lies outside this raster's coverage")
             if not points:
                 empty = np.empty(0, dtype=np.float64)
-                return Pm25Samples(empty, empty, empty, ts, rasters.manifest.data_quality, "cog")
+                return Pm25Samples(
+                    empty,
+                    empty,
+                    empty,
+                    ts,
+                    rasters.manifest.data_quality,
+                    "cog",
+                    rasters.manifest.model_version,
+                    rasters.manifest.generated_at,
+                )
             x, y = project_points(points)
             rows, columns = rowcol(rasters.readers[0].transform, x, y)
             rows, columns = np.asarray(rows, dtype=int), np.asarray(columns, dtype=int)
@@ -223,7 +236,14 @@ class CogAQProvider:
                     raise AQUnavailableError("Requested raster cell has no data")
                 arrays.append(np.asarray(pixels, dtype=np.float64))
             return Pm25Samples(
-                arrays[0], arrays[1], arrays[2], hour_key(ts), rasters.manifest.data_quality, "cog"
+                arrays[0],
+                arrays[1],
+                arrays[2],
+                hour_key(ts),
+                rasters.manifest.data_quality,
+                "cog",
+                rasters.manifest.model_version,
+                rasters.manifest.generated_at,
             )
 
     def raster_median(self, ts: datetime) -> float:
@@ -242,10 +262,16 @@ class CogAQProvider:
             return self._medians[key]
 
     def close(self) -> None:
+        """Close all cached raster handles."""
         with self._lock:
             self._stack.close()
             self._rasters.clear()
             self._medians.clear()
+
+    def manifest(self, ts: datetime) -> RasterManifest:
+        """Immutable provenance of the selected hourly set, without rereading files."""
+        with self._lock:
+            return self._hour(ts).manifest
 
 
 @dataclass(frozen=True, slots=True)

@@ -178,6 +178,47 @@ class ActiveRouter:
         nx, ny = self._positions[mode]
         return int(np.argmin((nx - x[0]) ** 2 + (ny - y[0]) ** 2))
 
+    def base_path(
+        self, origin: Point, destination: Point, mode: ActiveMode = "WALK"
+    ) -> tuple[tuple[Point, ...], float, float]:
+        """Geometry-only lambda-zero path when hourly AQ weights are unavailable.
+
+        Orchestration must still sample this hour's AQ and score exposure.
+        """
+        if mode not in {"WALK", "BICYCLE"}:
+            raise ValueError("Active mode must be WALK or BICYCLE")
+        if not self.graph.bounds.contains(origin) or not self.graph.bounds.contains(destination):
+            raise OutOfServiceAreaError("Origin or destination is outside the pilot service area")
+        if origin == destination:
+            return (origin,), 0.0, 0.0
+        start, end = self._nearest(origin, mode), self._nearest(destination, mode)
+        network, costs = self._networks[mode], self._cost_bases[mode]
+        paths = (
+            {end: [start]}
+            if start == end
+            else rx.dijkstra_shortest_paths(network, start, target=end, weight_fn=costs.__getitem__)
+        )
+        if end not in paths:
+            raise NoActiveRouteError("No connected path for the requested active mode")
+        edges = tuple(
+            min(network.get_all_edge_data(a, b), key=costs.__getitem__)
+            for a, b in pairwise(paths[end])
+        )
+        first = self.graph.nodes[self._node_ids[mode][start]]
+        last = self.graph.nodes[self._node_ids[mode][end]]
+        points = [origin]
+        if points[-1] != first:
+            points.append(first)
+        for index in edges:
+            points.extend(self.graph.edges[index].geometry[1:])
+        if points[-1] != destination:
+            points.append(destination)
+        distance = sum(self.graph.edges[i].length_m for i in edges) + (
+            distance_m(origin, first) + distance_m(last, destination)
+        )
+        speed = self.params.walk_speed_m_s if mode == "WALK" else self.params.bike_speed_m_s
+        return tuple(points), distance, distance / speed
+
     def plan(
         self, origin: Point, destination: Point, ts: datetime, mode: ActiveMode = "WALK"
     ) -> tuple[ActiveRoute, ...]:
