@@ -741,6 +741,130 @@ three marked Docker integrations deselected and exercised by the direct runners
 above. Existing rasterio/NumPy deprecation warnings remain. Contract/schema and
 dependency lock files are unchanged.
 
+### T6.4a: hourly point forecast
+
+`GET /v1/aq/forecast?lat=...&lon=...&hours=24` returns the next 1–24 complete WIB
+hours, starting after the current hour. The requested horizon is complete: there
+are no silent gaps or partial success responses. Use the backend on port 8002
+with the existing `backend-api` target; the Compose API on port 8000 is still a
+placeholder.
+
+The service first samples P10/P50/P90 from loaded P2 COG manifests configured by
+the existing `HIRUP_AQ_MANIFESTS` setting. All hours must be `kind: forecast`,
+already published, from the same model version and hourly generation cycle,
+and consistent with their declared lead hours. Individual raster publications
+may finish seconds apart within that cycle. Each sample must match its manifest
+quality/model/generation metadata; a final metadata check rejects a publication
+change during the window. No current-hour nowcast or raw CAMS value is repeated
+as a future forecast. The response source is `model_corrected`, with the worst
+input `data_quality` and `X-Data-Age-Seconds` from the oldest raster publication.
+
+If corrected coverage is incomplete or invalid, the entire window falls back
+to the already supported `HIRUP_AQ_HISTORY` artifact, using its regional
+hour-of-week observation quantiles. This returns `source: historical_mean` and
+`data_quality: approximated`, never a mixture of corrected and historical hours.
+The observation period must end before today in WIB and cover every requested
+hour/location. Because the artifact records dates rather than precise observation
+timestamps, its age header is conservative: seconds since WIB midnight at the
+start of the final observation day. It is not a newly generated forecast age.
+
+Missing complete coverage returns RFC 9457 `503 data_unavailable`; points outside
+the pilot return `404 out_of_service_area`. Horizons outside 1–24 return 400.
+No extra request coordinates are cached or logged. Existing hourly/publication
+refresh updates COGs and the shared historical input off the event loop; invalid
+history retains the previous valid artifact. Files are not reopened per request.
+
+Production refuses synthetic forecasts. The normal `HIRUP_DEMO` route provider
+does not manufacture forecast inputs: without corrected/sourced history this
+endpoint remains unavailable. Tests explicitly opt into synthetic 2x2 COG
+fixtures to verify per-hour quantiles, 24-hour coverage, provenance/publication
+changes, historical fallback, freshness headers and the HTTP contract. Those
+fixtures are test-only and are never production, model or impact evidence.
+
+```bash
+uv run pytest -q tests/test_forecast.py tests/test_advice_aq.py services/api/tests tests/contract
+curl --fail-with-body "http://127.0.0.1:8002/v1/aq/forecast?lat=-6.2088&lon=106.8227&hours=24"
+```
+
+No new configuration names, dependencies or contract fields are required. Real
+P2 forecast artifacts are not present in this checkout, so production validation
+remains pending. Daily summary is described below; kelurahan insights remains a
+separate subsequent feature.
+
+Final validation passes Ruff lint/format (104 files), strict mypy (56 source
+files), lock consistency and 326 non-integration tests, including both live OSRM
+profiles. The 30 forecast tests include actual COG IO plus HTTP/schema checks.
+Existing rasterio/NumPy deprecations remain visible; contracts and schemas are
+unchanged.
+
+The first cold Docker golden replay passed 29/30 with one 06:30 OD02 503 at
+approximately 3.25 s. A separate same-query OTP diagnostic observed a 3.22 s
+ReadTimeout on walkReluctance 6 while other variants returned itineraries; later
+diagnostic replays returned candidates. No routing timeout or variants were
+changed. The final full cold replay passed 30/30, with plan p50 642.4 ms/p95
+3,933.6 ms, AQ-point p95 3.33 ms and zero plan-cache hits (33 misses including
+excluded warm-ups). These seeded-AQ/real-routing checks do not establish the
+3-second Should target or production P2 availability.
+
 PostgreSQL/PostGIS and new Rust/Go services remain deferred. Existing native
 geodesic/graph libraries are used, with no new dependencies or data downloads.
 Production P2 rasters, a deployed VM, and sustained load still require validation.
+
+### T6.4b: complete daily point summary
+
+`GET /v1/aq/daily-summary?lat=...&lon=...&date=2026-10-14` returns the mean of
+the 24 hourly P50 values from midnight through 23:00 on the requested WIB date.
+Omitting `date` selects today in WIB, including when the UTC date differs.
+`cig_eq_day` uses the existing Exposure Engine and the cigarette constant loaded
+from `contracts/exposure_params.yaml`. For example, a daily mean of 50 ug/m3
+gives `50 * 24 / 528`, about 2.27 cigarettes per day with the current contract.
+The API does not infer daily means from a current-hour concentration or average
+P10/P90 into P50. `ispu_category` stays null until verified breakpoints exist.
+
+All 24 COG hours must be published, with matching valid hours and sample
+quality/model/generation metadata. Nowcasts have zero lead and an hourly
+generation cycle matching their valid hour. Future hours require corrected
+forecasts with consistent lead hours and one model/generation cycle. Archived
+past forecasts may come from distinct completed cycles. A final manifest check
+rejects publication changes during sampling. A day containing any forecast has
+at least `approximated` quality; explicit test fixtures preserve `synthetic`.
+The age header follows the oldest raster publication in the day.
+
+If any hour is missing or invalid, the entire day uses the existing sourced
+`HIRUP_AQ_HISTORY` hour-of-week statistics with `approximated` quality. History
+must cover all 24 hours and the location, and its observation period must end
+before both today and the requested day. Its age uses the same conservative
+last-observation-day midnight policy as forecast. There is no partial-day or
+mixed-source success response. Without complete COG or historical coverage the
+endpoint returns RFC 9457 `503 data_unavailable`; points outside the pilot return
+`404 out_of_service_area`. Invalid dates return 400.
+
+Startup and hourly publication refresh share the validated historical artifact
+across advice, forecast and daily summary. Invalid historical updates retain the
+previous valid artifact. Raster handles are reused, sampling runs off the event
+loop, and the endpoint does not cache or log requested coordinates. Production
+refuses synthetic COGs; demo mode does not substitute a daily forecast. No new
+configuration names, dependencies, contracts, database or data downloads are
+required. P2 production artifacts remain unavailable for real-data validation.
+
+```bash
+uv run pytest -q tests/test_daily_summary.py tests/test_forecast.py tests/test_advice_aq.py services/api/tests tests/contract
+curl --fail-with-body "http://127.0.0.1:8002/v1/aq/daily-summary?lat=-6.2088&lon=106.8227&date=2026-10-14"
+```
+
+The daily feature adds 40 tests for hand-computed means/conversion, full-day
+coverage, WIB dates, provenance, publication changes, fallback, refresh, actual
+synthetic COG IO, HTTP errors and numeric overflow. Final validation passes Ruff
+lint/format (107 files), strict mypy (58 source files) and 366 non-integration
+tests including both live OSRM profiles. OpenAPI/schema synchronization remains
+green and the dependency lock is unchanged. The three opt-in integrations are
+deselected in that suite; golden and advice are also exercised by direct runners.
+Existing upstream rasterio/NumPy deprecation warnings remain.
+
+The cold-cache Docker golden replay passes 30/30, with plan p50 542.7 ms/p95
+2,567.8 ms and AQ-point p95 2.34 ms (zero cache hits, 33 misses including warm-ups).
+Advice regression passes 12/12 windows, each with 13 slots, with p50 6,304.1 ms
+and p95 9,288.8 ms. These are local real-router/seeded-synthetic-AQ regressions,
+not production or impact measurements. Although this golden sample is below
+3 seconds, previous runs exceeded it: consistent cold Should performance and
+production P2/deployed validation remain open.

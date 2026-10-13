@@ -7,8 +7,14 @@ from fastapi import APIRouter, Path, Query, Request, Response
 from pydantic import AwareDatetime
 
 from services.api.dependencies import get_runtime, unavailable
-from services.api.errors import ProblemError, not_implemented, problem_responses
-from services.api.schemas.aq import AqForecastResponse, AqPointResponse, DailySummaryResponse
+from services.api.errors import ProblemError, problem_responses
+from services.api.schemas.aq import (
+    AqForecastResponse,
+    AqPointResponse,
+    DailySummaryResponse,
+    ForecastHour,
+    ForecastSource,
+)
 from services.api.schemas.common import DataQuality, Latitude, Longitude, Pm25Quantiles
 from services.api.schemas.examples import AQ_FORECAST, AQ_POINT, DAILY_SUMMARY
 from services.api.schemas.problem import ProblemType
@@ -129,11 +135,36 @@ async def tile(
     openapi_extra={"x-priority": "S"},
 )
 async def forecast(
+    request: Request,
+    response: Response,
     lat: Annotated[Latitude, Query()],
     lon: Annotated[Longitude, Query()],
     hours: Annotated[int, Query(ge=1, le=24)] = 24,
 ) -> AqForecastResponse:
-    raise not_implemented("T6")
+    runtime = get_runtime(request)
+    location = Point(lon, lat)
+    if not runtime.aq.bounds.contains(location):
+        raise unavailable(OutOfServiceAreaError())
+    if runtime.forecast is None:
+        raise unavailable(AQUnavailableError())
+    try:
+        result = await asyncio.to_thread(runtime.forecast.forecast, location, hours)
+    except (AQUnavailableError, OutOfServiceAreaError) as exc:
+        raise unavailable(exc) from None
+    response.headers["X-Data-Age-Seconds"] = str(result.age_s)
+    return AqForecastResponse(
+        lat=lat,
+        lon=lon,
+        source=ForecastSource(result.source),
+        hours=[
+            ForecastHour(
+                valid_hour=hour.valid_hour.astimezone(ZoneInfo("Asia/Jakarta")),
+                pm25=Pm25Quantiles(p10=hour.pm25.p10, p50=hour.pm25.p50, p90=hour.pm25.p90),
+            )
+            for hour in result.hours
+        ],
+        data_quality=DataQuality(result.data_quality),
+    )
 
 
 @router.get(
@@ -149,8 +180,29 @@ async def forecast(
     openapi_extra={"x-priority": "S"},
 )
 async def daily_summary(
+    request: Request,
+    response: Response,
     lat: Annotated[Latitude, Query()],
     lon: Annotated[Longitude, Query()],
     date: Annotated[dt.date | None, Query(description="Defaults to today (WIB)")] = None,
 ) -> DailySummaryResponse:
-    raise not_implemented("T6")
+    runtime = get_runtime(request)
+    location = Point(lon, lat)
+    if not runtime.aq.bounds.contains(location):
+        raise unavailable(OutOfServiceAreaError())
+    if runtime.daily_summary is None:
+        raise unavailable(AQUnavailableError())
+    try:
+        result = await asyncio.to_thread(runtime.daily_summary.summarize, location, date)
+    except (AQUnavailableError, OutOfServiceAreaError) as exc:
+        raise unavailable(exc) from None
+    response.headers["X-Data-Age-Seconds"] = str(result.age_s)
+    return DailySummaryResponse(
+        lat=lat,
+        lon=lon,
+        date=result.date,
+        mean_pm25=result.mean_pm25,
+        cig_eq_day=result.cig_eq_day,
+        ispu_category=None,
+        data_quality=DataQuality(result.data_quality),
+    )
