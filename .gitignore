@@ -1,0 +1,55 @@
+# Data and generated artefacts (never committed)
+data/
+*.parquet
+*.tif
+*.tiff
+*.duckdb
+*.osm.pbf
+*.osrm*
+*.obj
+
+# Models
+ml/models/
+*.lgb
+*.joblib
+*.pkl
+*.onnx
+
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.hypothesis/
+.coverage
+.coverage.*
+htmlcov/
+dist/
+build/
+*.egg-info/
+
+# Flutter / Android
+apps/mobile/build/
+apps/mobile/.dart_tool/
+apps/mobile/.flutter-plugins
+apps/mobile/.flutter-plugins-dependencies
+apps/mobile/android/.gradle/
+apps/mobile/android/local.properties
+*.apk
+*.aab
+*.keystore
+*.jks
+
+# Editors and OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
