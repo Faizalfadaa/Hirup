@@ -31,10 +31,11 @@ from services.routing.active_params import DEFAULT_PATH, load_active_params
 from services.routing.active_router import ActiveRouter
 from services.routing.departure_advice import DepartureAdvice
 from services.routing.gtfs import GtfsHeadways
-from services.routing.models import Candidate, Query
+from services.routing.models import Candidate, PlanResult, Query
 from services.routing.osrm_client import OsrmClient
 from services.routing.otp_client import OtpClient
 from services.routing.plan import ActiveCandidates, Planner
+from services.routing.plan_cache import PlanCache
 from services.routing.rerank import load_ranking_params
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -61,6 +62,24 @@ class Runtime:
     demo_reference: float | None = None
     advice: DepartureAdvice | None = None
     advice_aq: AdviceAQProvider | None = None
+    plan_cache: PlanCache | None = None
+    advice_cache: PlanCache | None = None
+
+    def configure_plan_cache(self) -> None:
+        if self.planner is not None:
+            self.plan_cache = PlanCache(self.planner, self.aq.bounds)
+
+    def invalidate_plans(self) -> None:
+        for cache in (self.plan_cache, self.advice_cache):
+            if cache is not None:
+                cache.invalidate()
+
+    async def plan(self, query: Query) -> PlanResult:
+        if self.planner is None:
+            raise AQUnavailableError("No planner configured")
+        if self.plan_cache is not None:
+            return await self.plan_cache.plan(query)
+        return await self.planner.plan(query)
 
     def configure_advice(
         self, *, demo: bool = False, historical: HistoricalAQProvider | None = None
@@ -70,7 +89,12 @@ class Runtime:
         self.advice_aq = AdviceAQProvider(self.aq.provider, self.cog, historical, demo=demo)
         planner = copy(self.planner)
         planner.aq = self.advice_aq
-        self.advice = DepartureAdvice(planner)
+        if self.plan_cache is not None:
+            self.advice_cache = PlanCache(planner, self.aq.bounds)
+            # Slot generation already fans out OTP variants; avoid overlapping slot CPU bursts.
+            self.advice = DepartureAdvice(self.advice_cache, concurrency=1)
+        else:
+            self.advice = DepartureAdvice(planner)
 
     @classmethod
     def unavailable(cls) -> "Runtime":
@@ -85,6 +109,7 @@ class Runtime:
         )
         if self.active is not None and reference is not None:
             self.active.refresh_aq(ts, reference)
+            self.invalidate_plans()
 
     def data_age(self, ts: datetime, source: str) -> int:
         generated_at = (
@@ -193,7 +218,11 @@ class Runtime:
             active_router=active,
             model_version=model_version,
         )
+        # Bound the pilot departure search to one 15-minute slot; keep all mode/reluctance variants.
+        if isinstance(planner.transit, OtpClient):
+            planner.transit.search_window_s = 900
         runtime = cls(aq, planner, params, active, cog, model_version)
+        runtime.configure_plan_cache()
         historical = None
         history_path = settings.get("HIRUP_AQ_HISTORY")
         if not demo and history_path and Path(history_path).is_file():

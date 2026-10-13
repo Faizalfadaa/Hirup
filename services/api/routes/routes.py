@@ -66,16 +66,22 @@ async def plan(
         body.include_comparison,
     )
     try:
-        result = await runtime.planner.plan(query)
+        result = await runtime.plan(query)
     except (AQUnavailableError, OutOfServiceAreaError) as exc:
         raise unavailable(exc) from None
-    return response(
+    body_response = response(
         result,
         runtime.params,
         request.state.request_id,
         body.profile.sensitivity,
         body.include_comparison,
     )
+    if runtime.plan_cache is not None:
+        body_response.disclaimer += (
+            " Lokasi awal dan akhir rute diperkirakan pada sel 100 m; "
+            "periksa akses jalan dari lokasi Anda."
+        )
+    return body_response
 
 
 @router.get(

@@ -451,7 +451,8 @@ with P10/P50/P90 dose, duration, and signed changes against the center slot.
 Negative dose change means lower dose. The best slot minimizes P50 dose, then
 duration, then distance from the requested time. Road comparisons are omitted.
 Two slot plans at a time share a semaphore across advice requests. No OD, route
-result or advice response is cached.
+result or advice response was cached in the T6.1 baseline measured below. T6.2
+adds caching of plans for approximate grid representatives, as described next.
 
 Production uses sourced current/past-hour AQ; future hours require a published
 `kind: forecast` raster manifest from P2. Raw future CAMS or a repeated current
@@ -531,3 +532,117 @@ remains unverified.
 The accompanying 30-case golden regression replay passed: plan p50 848.9 ms,
 p95 4,217.3 ms and point p95 4.66 ms. The p95 3-second Should target remains open;
 this replay does not demonstrate an optimization change.
+
+## Plan cache (T6, second feature)
+
+The runtime now wraps plan generation in an in-process LRU cache: 600-second
+monotonic TTL, at most 128 completed entries and 16 distinct in-flight jobs per
+cache. Identical simultaneous requests share one computation. A caller disconnect
+does not cancel a computation needed by another caller. Failed requests are not
+cached; excess distinct in-flight work returns 503. Plan and advice use separate
+caches because their AQ fallback policies differ. Cached advice now plans one slot
+at a time: each slot already fans out OTP variants. This avoids the six simultaneous
+OTP searches produced by overlapping bus-only slots. The T6.1 baseline above used
+two slots concurrently.
+
+To meet the location minimization rule, requests are planned from deterministic
+centers of 100 m EPSG:32748 cells, clamped to the pilot bbox. Exact incoming
+coordinates are used only to identify the cells, never passed to a retained job
+or saved with the result. The same cells produce the same representative query
+regardless of the precise pin location. Cached objects contain domain results,
+not HTTP responses, request IDs or users. Serialization creates a new request ID
+for each reply.
+
+This changes route endpoints to approximate locations, with quality at least
+`approximated` (synthetic remains synthetic) and an Indonesian location note on
+plan responses. A representative can be on a different side of a physical barrier;
+users must check access from their actual location. Very short trips within one
+cell can collapse to the same endpoint. The input coordinates are not restored
+into cached polylines. This behavior was explicitly approved for the pilot.
+
+The key includes origin/destination cells, local-equivalent 15-minute slot,
+the exact timezone-normalized departure/arrival time, profile, mode, max walking
+distance, excluded modes, transfer preference, arrival/departure direction and
+comparison preference. Requests at different exact times do not share a transit
+result even within the same slot: simply shifting a cached timetable can miss a
+service. Consequently default-now requests with distinct timestamps often miss;
+the cache benefits repeated searches with the same selected departure time.
+
+AQ publication refresh, including history/reference changes or partial failures,
+invalidates both caches. Preparing new active weights also invalidates results.
+Versioned in-flight work cannot refill the cache after invalidation; it retries
+against the new generation once, then returns 503 if inputs keep changing. Cached
+data is immutable. Workers/processes have separate caches; cross-process sharing
+is not provided. TTL expiry is enforced on lookup, with expired entries removed
+on insertion; memory remains bounded even during idle periods.
+
+The schema, graph loading and sourced AQ policies are unchanged. PostgreSQL/PostGIS
+and additional Rust/Go services remain options to evaluate after profiling shows
+a concrete need. Neither was added for this cache feature.
+
+Measure cache misses, repeated hits, eight identical simultaneous requests and
+four distinct requests on public golden OD:
+
+```bash
+uv run python tests/integration/cache_runner.py --date 2026-10-14 \
+  --demo-min-pm25 10 --demo-max-pm25 80 --reference-pm25 40 --trunk-penalty 2 \
+  --output data/benchmarks/t6-cache-latency.json
+HIRUP_TEST_CACHE=1 uv run pytest -q -m integration tests/integration/test_plan_cache.py
+```
+
+The report distinguishes miss/hit/burst latency and verifies response schemas,
+quality labels and dose sums. It uses real Docker engines and explicit seeded AQ
+for integration/latency only. Graph loading and hourly preparation are excluded.
+These small bursts are a diagnostic, not a production capacity or throughput
+claim. Production COG performance and deployed-host load remain unverified.
+
+The dedicated local run succeeded for all 122 recorded requests:
+
+| Phase | Requests | p50 | p95 |
+| --- | --- | --- | --- |
+| Empty cache, unique public OD | 10 | 978.6 ms | 3,317.4 ms |
+| Repeated cache hits | 100 | 9.33 ms | 13.70 ms |
+| Identical concurrent misses | 8 | 1,037.3 ms | 1,043.1 ms |
+| Distinct concurrent misses | 4 | 5,885.8 ms | 6,124.9 ms |
+
+The identical burst performed one upstream plan with seven joined callers.
+The distinct burst exceeds the 5-second Must target on this host; the cache does
+not solve the CPU/upstream cost of unrelated new searches. Admission/rate limits,
+further profiling and deployed-host validation remain necessary before claiming
+production capacity. The 10-case miss p95 also remains above the 3-second Should
+target. Do not combine the hit and miss samples into a headline latency figure.
+
+Profiling found repeated active-leg graph searches among transit candidates. The
+planner now reuses identical endpoint/mode/hour searches within a single request,
+including unavailable searches, while checking each leg's original detour bounds.
+The memo is discarded before responding; it stores no coordinates across requests.
+No candidate mode, walk-reluctance variant, or itinerary count was removed.
+
+The API runtime also bounds initial transit departure searches to 15 minutes,
+rather than the previous 30-minute window. This is an operational search tradeoff:
+departures beyond that window may no longer be candidates. It does not change the
+13-slot ±90-minute advice window, and is not a GTFS or exposure constant. Revalidate
+coverage when new GTFS feeds or service patterns arrive. Direct OTP client defaults
+remain separate from this runtime setting.
+
+On this host, the first cache regression replay passed 29/30 cases with one OTP
+timeout; an exact-coordinate diagnostic also timed out for the same case. A longer
+diagnostic timeout exposed roughly 6.84 s of OTP generation and 1.75 s of downstream
+processing in one primary-only experiment. A 15-minute search restored 30/30
+options but initially measured plan p95 6,206.4 ms, above the Must target. After
+request-local active-search reuse, Make golden-od again passed 30/30 and the Must
+latency gates: plan p50 1,067.9 ms/p95 3,758.4 ms and AQ point p95 4.28 ms.
+The golden runner's one-pair warm-up now primes that pair's cache, so this replay
+mixes three hits with 27 misses; the dedicated runner separates them. The p95
+3-second Should target for new searches remains open. These observations do not
+prove deployed-host capacity or model accuracy.
+
+Post-cache advice regression initially passed 10/12 windows: both evening transit
+windows returned 503 under combined slot/routing/graph load. An isolated scan
+found generated routes with GTFS headways in all 13 evening slots. After limiting
+cached advice to one slot at a time, the full direct runner passed 12/12 windows,
+13 slots each, across both profiles and transit/walk/bike. Cold advice p50 was
+10,179.4 ms/p95 13,937.2 ms (maximum 14,471.6 ms). This is slower than the T6.1
+baseline and remains a user-experience/performance concern; reliability of this
+local replay does not establish production availability. Repeated identical advice
+can use its plan cache, but this run measures fresh windows, not cache hits.

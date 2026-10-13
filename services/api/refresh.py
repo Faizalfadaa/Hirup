@@ -22,6 +22,21 @@ def refresh(
     reference_path: Path | None,
     history_path: Path | None = None,
 ) -> None:
+    try:
+        _refresh(runtime, ts, manifests, fallback_path, reference_path, history_path)
+    finally:
+        # Also clear after partial/failed publication: no cached result outlives input changes.
+        runtime.invalidate_plans()
+
+
+def _refresh(
+    runtime: Runtime,
+    ts: datetime,
+    manifests: tuple[Path, ...],
+    fallback_path: Path | None,
+    reference_path: Path | None,
+    history_path: Path | None = None,
+) -> None:
     provider = runtime.aq.provider
     if fallback_path is not None:
         raw = json.loads(fallback_path.read_text())
