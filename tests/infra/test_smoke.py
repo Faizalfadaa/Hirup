@@ -12,7 +12,7 @@ from infra.scripts.smoke import (
 
 @pytest.mark.parametrize("value", [None, True, 0, -1, float("nan"), float("inf"), "10"])
 def test_invalid_duration(value: object) -> None:
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="Engine duration"):
         positive_duration(value)
 
 

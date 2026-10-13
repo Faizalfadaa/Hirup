@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import zipfile
 import json
+import zipfile
 from pathlib import Path
 
 import pytest
@@ -93,7 +93,7 @@ def test_invalid_stop_coordinates(tmp_path: Path, coordinate: str) -> None:
 
 
 @pytest.mark.parametrize(
-    "table,old,new,message",
+    ("table", "old", "new", "message"),
     [
         ("stops.txt", "-6.2", "-6.5", "No stops"),
         ("agency.txt", "Asia/Jakarta", "UTC", "Asia/Jakarta"),
@@ -132,7 +132,7 @@ def test_empty_shapes_and_duplicate_tables_fail(tmp_path: Path) -> None:
         validate_feed(write_feed(tmp_path / "bad.zip", content))
     content = tables()
     content["duplicate/stops.txt"] = content["stops.txt"]
-    with pytest.raises(FeedError, match="exactly one stops.txt"):
+    with pytest.raises(FeedError, match=r"exactly one stops\.txt"):
         validate_feed(write_feed(tmp_path / "duplicates.zip", content))
 
 

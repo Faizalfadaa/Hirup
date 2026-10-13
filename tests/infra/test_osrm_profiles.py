@@ -59,12 +59,10 @@ def fixture_osm() -> str:
             f'{highway}<tag k="maxspeed" v="90"/>{tags}</way>'
         )
     nodes.append(
-        '<node id="12" lat="-6.20009" lon="106.7910">'
-        '<tag k="barrier" v="toll_booth"/></node>'
+        '<node id="12" lat="-6.20009" lon="106.7910"><tag k="barrier" v="toll_booth"/></node>'
     )
     ways.append(
-        '<way id="12"><nd ref="1"/><nd ref="12"/><nd ref="2"/>'
-        '<tag k="highway" v="primary"/></way>'
+        '<way id="12"><nd ref="1"/><nd ref="12"/><nd ref="2"/><tag k="highway" v="primary"/></way>'
     )
     return '<?xml version="1.0"?><osm version="0.6">' + "".join(nodes + ways) + "</osm>"
 
@@ -103,9 +101,7 @@ def engines(tmp_path_factory: pytest.TempPathFactory) -> Iterator[dict[str, str]
                 "/data/tiny.osrm",
             )
             running.append(container)
-            bindings = json.loads(docker("inspect", container))[0]["NetworkSettings"][
-                "Ports"
-            ]
+            bindings = json.loads(docker("inspect", container))[0]["NetworkSettings"]["Ports"]
             port = bindings["5000/tcp"][0]["HostPort"]
             urls[profile] = f"http://127.0.0.1:{port}"
             for attempt in range(30):
@@ -126,12 +122,7 @@ def engines(tmp_path_factory: pytest.TempPathFactory) -> Iterator[dict[str, str]
 
 
 def route(base: str, coordinates: str) -> dict[str, Any]:
-    url = (
-        base
-        + "/route/v1/driving/"
-        + coordinates
-        + "?geometries=geojson&annotations=true"
-    )
+    url = base + "/route/v1/driving/" + coordinates + "?geometries=geojson&annotations=true"
     with urllib.request.urlopen(url, timeout=5) as response:
         result: dict[str, Any] = json.load(response)
     assert result["code"] == "Ok"
@@ -158,7 +149,4 @@ def test_motorcycle_caps_explicit_high_maxspeed_using_upstream_urban_default(
     car = route(engines["car"], coordinates)
     motorcycle = route(engines["motorcycle"], coordinates)
     assert motorcycle["duration"] > car["duration"]
-    assert all(
-        speed <= 50 / 3.6 + 0.1
-        for speed in motorcycle["legs"][0]["annotation"]["speed"]
-    )
+    assert all(speed <= 50 / 3.6 + 0.1 for speed in motorcycle["legs"][0]["annotation"]["speed"])

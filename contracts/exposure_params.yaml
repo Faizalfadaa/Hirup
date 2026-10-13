@@ -1,0 +1,319 @@
+# Hirup exposure parameters, contract v1.0 (frozen at H0).
+#
+# Every entry: value, range, unit, source, verified_by, note.
+# - value: point value used by the Exposure Engine. For micro-environment factors F
+#   it is the midpoint of the initial range in SPEC Table 12.1; that midpoint reproduces
+#   the worked example in SPEC 13.2.
+# - verified_by: null until a team member has checked the value against the cited
+#   source. Code warns while it is null.
+# - A null value means the spec gives no number. The engine must refuse to use it.
+# Never fill values or citations from memory or from an AI assistant (AGENTS.md rule 3).
+version: "1.0"
+
+micro_environment:
+  walk:
+    f:
+      value: 1.15
+      range: [1.0, 1.3]
+      unit: "1"
+      source: "SPEC Table 12.1 (walking on sidewalk; higher on trunk/primary). Systematic review of commuter exposure by mode (2017)"
+      verified_by: null
+      note: "TODO(verify)"
+    vr_m3_h:
+      value: 1.2
+      range: null
+      unit: "m3/h"
+      source: "SPEC Table 12.1 (light walking). US EPA Exposure Factors Handbook, Chapter 6"
+      verified_by: null
+      note: "TODO(verify)"
+  bicycle:
+    f:
+      value: 1.15
+      range: [1.0, 1.3]
+      unit: "1"
+      source: "SPEC Table 12.1 (cycling; higher on trunk/primary). Systematic review of commuter exposure by mode (2017)"
+      verified_by: null
+      note: "TODO(verify)"
+    vr_m3_h:
+      value: 2.0
+      range: null
+      unit: "m3/h"
+      source: "SPEC Table 12.1 (moderate activity). US EPA Exposure Factors Handbook, Chapter 6"
+      verified_by: null
+      note: "TODO(verify)"
+  wait_stop:
+    f:
+      value: 1.2
+      range: [1.1, 1.3]
+      unit: "1"
+      source: "SPEC Table 12.1 (waiting at kerbside or median bus stop)"
+      verified_by: null
+      note: "TODO(verify)"
+    vr_m3_h:
+      value: 0.6
+      range: null
+      unit: "m3/h"
+      source: "SPEC Table 12.1 (standing). US EPA Exposure Factors Handbook, Chapter 6"
+      verified_by: null
+      note: "TODO(verify)"
+  wait_station:
+    f:
+      value: 0.65
+      range: [0.5, 0.8]
+      unit: "1"
+      source: "SPEC Table 12.1 (waiting inside MRT/LRT station)"
+      verified_by: null
+      note: "TODO(verify)"
+    vr_m3_h:
+      value: 0.6
+      range: null
+      unit: "m3/h"
+      source: "SPEC Table 12.1 (standing). US EPA Exposure Factors Handbook, Chapter 6"
+      verified_by: null
+      note: "TODO(verify)"
+  bus:
+    f:
+      value: 0.65
+      range: [0.5, 0.8]
+      unit: "1"
+      source: "SPEC Table 12.1 (air-conditioned TransJakarta bus). Delhi in-vehicle exposure study"
+      verified_by: null
+      note: "TODO(verify)"
+    vr_m3_h:
+      value: 0.5
+      range: null
+      unit: "m3/h"
+      source: "SPEC Table 12.1 (sitting/standing). US EPA Exposure Factors Handbook, Chapter 6"
+      verified_by: null
+      note: "TODO(verify)"
+  rail:
+    f:
+      value: 0.55
+      range: [0.4, 0.7]
+      unit: "1"
+      source: "SPEC Table 12.1 (MRT/LRT train). Systematic review of commuter exposure by mode (2017)"
+      verified_by: null
+      note: "TODO(verify)"
+    vr_m3_h:
+      value: 0.5
+      range: null
+      unit: "m3/h"
+      source: "SPEC Table 12.1 (sitting/standing). US EPA Exposure Factors Handbook, Chapter 6"
+      verified_by: null
+      note: "TODO(verify)"
+  motorcycle:
+    f:
+      value: 1.3
+      range: [1.1, 1.5]
+      unit: "1"
+      source: "SPEC Table 12.1 (motorcycle rider). Systematic review of commuter exposure by mode (2017)"
+      verified_by: null
+      note: "TODO(verify)"
+    vr_m3_h:
+      value: 0.6
+      range: null
+      unit: "m3/h"
+      source: "SPEC Table 12.1 (riding). US EPA Exposure Factors Handbook, Chapter 6"
+      verified_by: null
+      note: "TODO(verify)"
+  car:
+    f:
+      value: 0.45
+      range: [0.3, 0.6]
+      unit: "1"
+      source: "SPEC Table 12.1 (car, air-conditioning on recirculation). Delhi in-vehicle exposure study"
+      verified_by: null
+      note: "TODO(verify)"
+    vr_m3_h:
+      value: 0.5
+      range: null
+      unit: "m3/h"
+      source: "SPEC Table 12.1 (sitting). US EPA Exposure Factors Handbook, Chapter 6"
+      verified_by: null
+      note: "TODO(verify)"
+
+# Leg mode -> micro-environment key. WAIT uses wait_stop or wait_station by place type.
+mode_mapping:
+  WALK: walk
+  BICYCLE: bicycle
+  BUS: bus
+  SUBWAY: rail
+  RAIL: rail
+  MOTORCYCLE: motorcycle
+  CAR: car
+  WAIT_stop: wait_stop
+  WAIT_station: wait_station
+
+cigarette:
+  ugh_m3_per_cigarette:
+    value: 528
+    range: null
+    unit: "ug*h/m3"
+    source: "Berkeley Earth rule of thumb: 22 ug/m3 over 24 h ~ 1 cigarette per day (SPEC 12.5; OpenAQ use case Sh**t! I Smoke)"
+    verified_by: null
+    note: "TODO(verify)"
+
+daily:
+  vr_m3_day:
+    value: 16
+    range: null
+    unit: "m3/day"
+    source: "SPEC 12.5 (daily ventilation ~16 m3/day). US EPA Exposure Factors Handbook, Chapter 6"
+    verified_by: null
+    note: "TODO(verify)"
+  f_indoor:
+    value: null
+    range: null
+    unit: "1"
+    source: "SPEC 12.5 names F_dalam_ruangan but gives no value"
+    verified_by: null
+    note: "TODO(verify): value missing; daily_dose_share stays null until filled"
+
+ranking:
+  transfer_penalty_s:
+    value: 300
+    range: null
+    unit: "s"
+    source: "SPEC 12.4 (5-minute equivalent penalty per transfer)"
+    verified_by: null
+    note: "design choice, not a scientific constant"
+  profiles:
+    umum:
+      alpha:
+        value: 0.5
+        range: null
+        unit: "1"
+        source: "SPEC 12.4"
+        verified_by: null
+        note: "design choice"
+      cleanest_tolerance_min_s:
+        value: 600
+        range: null
+        unit: "s"
+        source: "SPEC 12.4 (max(10 min, 30%))"
+        verified_by: null
+        note: "design choice"
+      cleanest_tolerance_frac:
+        value: 0.30
+        range: null
+        unit: "1"
+        source: "SPEC 12.4 (max(10 min, 30%))"
+        verified_by: null
+        note: "design choice"
+      warning_ispu_category:
+        value: tidak_sehat
+        range: null
+        unit: "ispu_category"
+        source: "SPEC 12.4 (ISPU 'Tidak Sehat')"
+        verified_by: null
+        note: "design choice"
+    rentan:
+      alpha:
+        value: 0.3
+        range: null
+        unit: "1"
+        source: "SPEC 12.4"
+        verified_by: null
+        note: "design choice"
+      cleanest_tolerance_min_s:
+        value: 900
+        range: null
+        unit: "s"
+        source: "SPEC 12.4 (max(15 min, 40%))"
+        verified_by: null
+        note: "design choice"
+      cleanest_tolerance_frac:
+        value: 0.40
+        range: null
+        unit: "1"
+        source: "SPEC 12.4 (max(15 min, 40%))"
+        verified_by: null
+        note: "design choice"
+      warning_ispu_category:
+        value: sedang
+        range: null
+        unit: "ispu_category"
+        source: "SPEC 12.4 (ISPU 'Sedang')"
+        verified_by: null
+        note: "design choice"
+
+active_routing:
+  walk_speed_m_s:
+    value: 1.2
+    range: null
+    unit: "m/s"
+    source: "SPEC 12.1 stage 2"
+    verified_by: null
+    note: "TODO(verify)"
+  bike_speed_m_s:
+    value: 4.2
+    range: null
+    unit: "m/s"
+    source: "SPEC 12.1 stage 2"
+    verified_by: null
+    note: "TODO(verify)"
+  max_detour_frac:
+    value: 0.5
+    range: null
+    unit: "1"
+    source: "SPEC 12.1 stage 2 (drop variants adding > 50%)"
+    verified_by: null
+    note: "design choice"
+  max_detour_s:
+    value: 480
+    range: null
+    unit: "s"
+    source: "SPEC 12.1 stage 2 (drop variants adding > 8 min)"
+    verified_by: null
+    note: "design choice"
+  lambdas:
+    value: [0, 0.5, 1.5, 3]
+    range: null
+    unit: "1"
+    source: "SPEC 12.1 stage 2"
+    verified_by: null
+    note: "design choice"
+  sample_spacing_m:
+    value: 25
+    range: null
+    unit: "m"
+    source: "SPEC 12.1 stage 3 (sample every 25 m)"
+    verified_by: null
+    note: "design choice"
+
+# Values the spec does not give. Each needs a sourced number before use.
+ispu_pm25_breakpoints:
+  value: null
+  range: null
+  unit: "ug/m3"
+  source: "ISPU PM2.5 category limits (SPEC 12.4 uses categories 'Sedang' and 'Tidak Sehat')"
+  verified_by: null
+  note: "TODO(verify): value missing"
+congestion_hourly:
+  value: null
+  range: null
+  unit: "1 (duration multiplier per hour 0-23)"
+  source: "SPEC 12.1 / 10.4: TomTom if available, else a published typical hourly profile"
+  verified_by: null
+  note: "TODO(verify): value missing"
+emission_factors:
+  value: null
+  range: null
+  unit: "kg CO2/km (vehicle) or kg CO2/passenger-km (transit)"
+  source: "SPEC 12.6: KLHK inventory guideline or DEFRA"
+  verified_by: null
+  note: "TODO(verify): value missing"
+fuel_cost:
+  value: null
+  range: null
+  unit: "IDR/km"
+  source: "SPEC 12.6: fuel use per km x fuel price"
+  verified_by: null
+  note: "TODO(verify): value missing"
+transit_fares:
+  value: null
+  range: null
+  unit: "IDR"
+  source: "SPEC 12.6: official fares"
+  verified_by: null
+  note: "TODO(verify): value missing"

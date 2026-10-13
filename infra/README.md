@@ -186,9 +186,11 @@ regression constructs a small, fixed OSM graph with legal detours and forbidden
 shortcuts, builds both MLD profiles in containers, and verifies routing in both
 directions plus speed caps. Temporary containers are stopped on exit.
 
-Golden OD and full backend checks require T0/T1 contracts and the real API, which
-are absent at this stage. T2 does not modify contracts, root Makefile, root
-pyproject, or another lane's source files.
+T0/T1 contracts and the exposure engine are now integrated. The root project pins
+`pyproj==3.7.1` so its CI can collect the infra package tests as well as backend
+tests. The separate infra environment remains available for its own checks.
+Contracts and the root Makefile are unchanged by this integration. Golden OD route
+integration still requires T5 orchestration; the current planning endpoint is a stub.
 
 ## Local verification record
 
@@ -217,6 +219,9 @@ Verified on 13 October 2026 on Windows/Git Bash, Docker Desktop Linux/WSL2,
 - `HIRUP_TEST_OSRM=1 make -f infra/Makefile infra-check`: Ruff lint/format passed,
   mypy passed for seven files, and all 42 tests passed, including Docker profile
   and HTTP placeholder/privacy checks. Compose configuration validation passed.
-- `uv sync --project infra --locked` succeeded. Contracts and root files were
-  unchanged; golden OD and product API integration could not be checked because
-  T0/T1 contracts and the backend are absent from this checkout.
+- After integrating T0/T1/T3, backend lint/format checks and strict types passed;
+  all 142 backend, contract, and infra tests passed, including the Docker profile
+  tests. The 42-test isolated infra suite also passed. Root `pyproj==3.7.1` and its
+  lockfile entry were added with approval so CI can run the infra tests. Contracts
+  are unchanged. Golden OD contract validation passes; end-to-end route requests
+  remain unverified because the product planning endpoint awaits T5.

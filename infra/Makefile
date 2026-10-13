@@ -2,7 +2,7 @@
 SHELL := bash
 .SHELLFLAGS := -eu -o pipefail -c
 
-.PHONY: infra-help data-routing graphs up down smoke infra-config infra-check infra-logs
+.PHONY: infra-help data-routing graphs up down smoke infra-config infra-check infra-logs logs
 
 infra-help:
 	@echo "data-routing  Download OSM/GTFS and clip OSM to the buffered pilot"
@@ -36,8 +36,10 @@ infra-check:
 	uv run --project infra ruff check infra/scripts tests/infra
 	uv run --project infra ruff format --check infra/scripts tests/infra
 	uv run --project infra mypy --config-file infra/pyproject.toml infra/scripts tests/infra
-	uv run --project infra python -m pytest -q tests/infra
+	uv run --project infra python -m pytest -c infra/pyproject.toml -q tests/infra
 	@for script in infra/scripts/*.sh; do bash -n "$$script"; done
 
 infra-logs:
 	bash "infra/scripts/stack.sh" logs
+
+logs: infra-logs
