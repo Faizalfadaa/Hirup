@@ -23,6 +23,7 @@ from services.exposure.aq_provider import (
     SyntheticAQProvider,
 )
 from services.exposure.aq_service import AQService
+from services.exposure.daily_summary import DailySummaryService
 from services.exposure.engine import Mode, Quantiles
 from services.exposure.forecast import ForecastService
 from services.exposure.geometry import BoundingBox, Point, hour_key
@@ -66,6 +67,13 @@ class Runtime:
     plan_cache: PlanCache | None = None
     advice_cache: PlanCache | None = None
     forecast: ForecastService | None = None
+    daily_summary: DailySummaryService | None = None
+
+    def configure_daily_summary(self, historical: HistoricalAQProvider | None = None) -> None:
+        if self.params is not None:
+            self.daily_summary = DailySummaryService(
+                self.aq.bounds, self.params, self.cog, historical
+            )
 
     def configure_forecast(self, historical: HistoricalAQProvider | None = None) -> None:
         self.forecast = ForecastService(self.aq.bounds, self.cog, historical)
@@ -239,6 +247,7 @@ class Runtime:
                 )
         runtime.configure_advice(demo=demo, historical=historical)
         runtime.configure_forecast(historical=historical)
+        runtime.configure_daily_summary(historical=historical)
         if demo:
             runtime.demo_reference = float(settings["HIRUP_DEMO_REFERENCE_PM25"])
         elif settings.get("HIRUP_CITY_MEDIANS"):

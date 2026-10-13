@@ -75,6 +75,8 @@ def _refresh(
                 runtime.advice_aq.historical = historical
             if runtime.forecast is not None:
                 runtime.forecast.historical = historical
+            if runtime.daily_summary is not None:
+                runtime.daily_summary.historical = historical
         except (ValueError, OSError):
             logging.getLogger(__name__).warning(
                 "Historical advice refresh unavailable; retaining prior observations"
