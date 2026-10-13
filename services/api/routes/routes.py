@@ -6,11 +6,12 @@ from fastapi import APIRouter, Body, Query, Request
 from pydantic import AwareDatetime
 
 from services.api.dependencies import get_runtime, unavailable
-from services.api.errors import not_implemented, problem_responses
-from services.api.schemas.common import Latitude, Longitude, Sensitivity
+from services.api.errors import problem_responses
+from services.api.schemas.common import DataQuality, Latitude, Longitude, Sensitivity
 from services.api.schemas.examples import DEPARTURE_ADVICE, PLAN_REQUEST, PLAN_RESPONSE
 from services.api.schemas.routes import (
     DepartureAdviceResponse,
+    DepartureSlot,
     PlanMode,
     PlanRequest,
     PlanResponse,
@@ -87,6 +88,7 @@ async def plan(
     openapi_extra={"x-priority": "S"},
 )
 async def departure_advice(
+    request: Request,
     origin_lat: Annotated[Latitude, Query()],
     origin_lon: Annotated[Longitude, Query()],
     destination_lat: Annotated[Latitude, Query()],
@@ -97,4 +99,35 @@ async def departure_advice(
     mode: PlanMode = PlanMode.TRANSIT,
     sensitivity: Sensitivity = Sensitivity.UMUM,
 ) -> DepartureAdviceResponse:
-    raise not_implemented("T6")
+    runtime = get_runtime(request)
+    origin, destination = Point(origin_lon, origin_lat), Point(destination_lon, destination_lat)
+    if not runtime.aq.bounds.contains(origin) or not runtime.aq.bounds.contains(destination):
+        raise unavailable(OutOfServiceAreaError())
+    if runtime.advice is None:
+        raise unavailable(AQUnavailableError())
+    anchor = (around or datetime.now(ZoneInfo("Asia/Jakarta"))).astimezone(ZoneInfo("Asia/Jakarta"))
+    try:
+        advice = await runtime.advice.advise(
+            DomainQuery(origin, destination, anchor, mode.value, sensitivity.value)
+        )
+    except (AQUnavailableError, OutOfServiceAreaError) as exc:
+        raise unavailable(exc) from None
+    return DepartureAdviceResponse(
+        requested_depart_at=anchor,
+        sensitivity=sensitivity,
+        mode=mode,
+        slots=[
+            DepartureSlot(
+                depart_at=slot.estimate.depart_at,
+                duration_s=slot.estimate.duration_s,
+                dose_ug=slot.estimate.dose.p50,
+                dose_ug_p10=slot.estimate.dose.p10,
+                dose_ug_p90=slot.estimate.dose.p90,
+                delta_dose_pct=slot.delta_dose_pct,
+                delta_duration_s=slot.delta_duration_s,
+            )
+            for slot in advice.slots
+        ],
+        best_slot=advice.best_slot,
+        data_quality=DataQuality(advice.data_quality),
+    )

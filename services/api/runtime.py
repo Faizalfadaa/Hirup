@@ -4,6 +4,7 @@ import json
 import logging
 import os
 from collections.abc import Mapping
+from copy import copy
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -11,6 +12,7 @@ from pathlib import Path
 import httpx
 import yaml
 
+from services.exposure.advice_aq import AdviceAQProvider, HistoricalAQProvider
 from services.exposure.aq_provider import (
     AQProvider,
     AQUnavailableError,
@@ -27,6 +29,7 @@ from services.exposure.params import ExposureParams, load_params
 from services.routing.active_graph import load_graph
 from services.routing.active_params import DEFAULT_PATH, load_active_params
 from services.routing.active_router import ActiveRouter
+from services.routing.departure_advice import DepartureAdvice
 from services.routing.gtfs import GtfsHeadways
 from services.routing.models import Candidate, Query
 from services.routing.osrm_client import OsrmClient
@@ -56,6 +59,18 @@ class Runtime:
     model_version: str | None = None
     references: dict[datetime, float] = field(default_factory=dict)
     demo_reference: float | None = None
+    advice: DepartureAdvice | None = None
+    advice_aq: AdviceAQProvider | None = None
+
+    def configure_advice(
+        self, *, demo: bool = False, historical: HistoricalAQProvider | None = None
+    ) -> None:
+        if self.planner is None:
+            return
+        self.advice_aq = AdviceAQProvider(self.aq.provider, self.cog, historical, demo=demo)
+        planner = copy(self.planner)
+        planner.aq = self.advice_aq
+        self.advice = DepartureAdvice(planner)
 
     @classmethod
     def unavailable(cls) -> "Runtime":
@@ -179,6 +194,16 @@ class Runtime:
             model_version=model_version,
         )
         runtime = cls(aq, planner, params, active, cog, model_version)
+        historical = None
+        history_path = settings.get("HIRUP_AQ_HISTORY")
+        if not demo and history_path and Path(history_path).is_file():
+            try:
+                historical = HistoricalAQProvider.load(Path(history_path))
+            except (ValueError, OSError):
+                logging.getLogger(__name__).warning(
+                    "Historical advice input unavailable; requiring forecast coverage"
+                )
+        runtime.configure_advice(demo=demo, historical=historical)
         if demo:
             runtime.demo_reference = float(settings["HIRUP_DEMO_REFERENCE_PM25"])
         elif settings.get("HIRUP_CITY_MEDIANS"):

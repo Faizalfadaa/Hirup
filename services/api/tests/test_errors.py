@@ -58,7 +58,7 @@ async def test_unknown_request_field_is_rejected(client: httpx.AsyncClient) -> N
     _assert_problem(resp, 400, "validation_error")
 
 
-async def test_unimplemented_endpoint_is_501_problem(client: httpx.AsyncClient) -> None:
+async def test_advice_without_runtime_is_503_problem(client: httpx.AsyncClient) -> None:
     resp = await client.get(
         "/v1/routes/departure-advice",
         params={
@@ -69,7 +69,7 @@ async def test_unimplemented_endpoint_is_501_problem(client: httpx.AsyncClient) 
         },
     )
 
-    _assert_problem(resp, 501, "not_implemented")
+    _assert_problem(resp, 503, "data_unavailable")
 
 
 async def test_unknown_path_is_404_problem(client: httpx.AsyncClient) -> None:

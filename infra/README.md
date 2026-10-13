@@ -441,3 +441,93 @@ returned 200 with one option and ten dose-bearing legs. A cold native plan first
 returned 503 while routing searches exceeded their timeout. Engine warm-up and
 production latency must be checked on the deployed host; no fixture substitutes
 an engine failure. The temporary local backend used for this check was stopped.
+
+## Departure advice (T6, first feature)
+
+`GET /v1/routes/departure-advice` plans 13 departures, spaced 15 minutes from the
+requested `around` time (inclusive ±90 minutes). The center preserves the requested
+minute/second. Each slot compares the balanced option for the requested sensitivity,
+with P10/P50/P90 dose, duration, and signed changes against the center slot.
+Negative dose change means lower dose. The best slot minimizes P50 dose, then
+duration, then distance from the requested time. Road comparisons are omitted.
+Two slot plans at a time share a semaphore across advice requests. No OD, route
+result or advice response is cached.
+
+Production uses sourced current/past-hour AQ; future hours require a published
+`kind: forecast` raster manifest from P2. Raw future CAMS or a repeated current
+nowcast is not presented as corrected forecast advice. The fallback is observed
+regional hour-of-week statistics labelled `approximated`, never an invented trend.
+Synthetic advice is confined to the explicit seeded demo mode described above.
+
+Set `HIRUP_AQ_HISTORY` to an internal JSON adapter file under ignored `data/`.
+This adapter does not change the frozen API or P2 raster contract. Required fields:
+
+| Field | Required value/content |
+| --- | --- |
+| `source` | Nonempty title/URL identifying the actual observation source |
+| `data_quality` | `approximated` |
+| `units` | `ug/m3` |
+| `period_start`, `period_end` | ISO dates bounding the observed period, in order |
+| `bbox_wgs84` | `min_lat`, `max_lat`, `min_lon`, `max_lon` of the regional statistics |
+| `hours` | Map from `weekday:HH` to `{p10, p50, p90}`; Monday=0, Sunday=6 |
+
+Quantiles must be finite, nonnegative and ordered, calculated from the declared
+observations by the data lane; this service only reads them. Regional statistics
+are spatially uniform within their stated bbox and approximate local exposure.
+No extrapolation occurs for missing weekdays/hours or outside the artifact bbox.
+The observation period must end before both today and the requested day. Lookup
+uses Asia/Jakarta, including midnight/week boundaries. Files load at startup and
+on changed publication metadata in the hourly worker. A missing/malformed history
+file retains prior valid history and does not block regular AQ refresh. The plan
+and point services keep their existing policy; the stricter forecast/history
+policy applies to advice only.
+
+All 13 slot plans must succeed. Missing routing/AQ coverage produces 503 Problem
+Details instead of partial advice or synthetic production data. Outside-area OD
+returns 404. If the center dose is zero and another slot is positive, the required
+percentage is undefined and the endpoint returns 503; all-zero windows have zero
+deltas. Production historical/forecast inputs and deployed-host latency remain
+unverified. Advice performs 13 plans and has its own latency; it is not the
+single-plan p95 target.
+Active routing keeps the T5 hourly weight cache: unprepared hours use baseline
+geometry scored with that hour's advice AQ. Future-hour active weight preparation
+is not performed inside the advice request.
+
+With `make backend-api` running and sourced inputs configured:
+
+```bash
+curl --get http://127.0.0.1:8002/v1/routes/departure-advice \
+  --data-urlencode 'origin_lat=-6.2891' --data-urlencode 'origin_lon=106.7745' \
+  --data-urlencode 'destination_lat=-6.2088' --data-urlencode 'destination_lon=106.8227' \
+  --data-urlencode 'around=2026-10-14T07:30:00+07:00' \
+  --data-urlencode 'mode=transit' --data-urlencode 'sensitivity=rentan'
+```
+
+To validate the window and measure local advice latency (no downloads):
+
+```bash
+uv run python tests/integration/advice_runner.py --date 2026-10-14 \
+  --demo-min-pm25 10 --demo-max-pm25 80 --reference-pm25 40 --trunk-penalty 2 \
+  --output data/benchmarks/t6-advice-latency.json
+HIRUP_TEST_ADVICE=1 uv run pytest -q -m integration tests/integration/test_departure_advice.py
+```
+
+As in the golden runner, these values are explicit test/demo inputs, not verified
+scientific assumptions. The runner uses one public golden OD at 07:30 and 17:30,
+three modes and two sensitivities (12 advice requests, each with 13 slot plans).
+It checks schema, synthetic label and center deltas. Graph load/hourly preparation
+and one transit warm-up per time are excluded; slot routing, scoring and HTTP
+serialization are included. The small sample is a local diagnostic, not production
+latency evidence, a model score or an impact claim. Ordinary tests need no Docker
+or external AQ artifact. Cache, plan optimization and other T6 endpoints are
+separate features.
+
+Local verification on 13 October 2026 for departures on 14 October: all 12 advice
+requests passed with 13 slots each. Advice p50 was 6,535.8 ms and p95 8,779.4 ms
+(maximum 9,147.9 ms). This is separate from the single-plan target; no cache or
+variant pruning was introduced in this feature. Production COG/historical timing
+remains unverified.
+
+The accompanying 30-case golden regression replay passed: plan p50 848.9 ms,
+p95 4,217.3 ms and point p95 4.66 ms. The p95 3-second Should target remains open;
+this replay does not demonstrate an optimization change.

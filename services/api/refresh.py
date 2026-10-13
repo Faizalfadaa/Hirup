@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from services.api.runtime import Runtime
+from services.exposure.advice_aq import HistoricalAQProvider
 from services.exposure.aq_provider import FallbackAQProvider, IdwAQProvider, StationSample
 from services.exposure.engine import Quantiles
 from services.exposure.geometry import Point, hour_key
@@ -19,6 +20,7 @@ def refresh(
     manifests: tuple[Path, ...],
     fallback_path: Path | None,
     reference_path: Path | None,
+    history_path: Path | None = None,
 ) -> None:
     provider = runtime.aq.provider
     if fallback_path is not None:
@@ -51,6 +53,13 @@ def refresh(
         runtime.references = references
     if runtime.cog is not None:
         runtime.cog.reload(manifests)
+    if history_path is not None and runtime.advice_aq is not None:
+        try:
+            runtime.advice_aq.historical = HistoricalAQProvider.load(history_path)
+        except (ValueError, OSError):
+            logging.getLogger(__name__).warning(
+                "Historical advice refresh unavailable; retaining prior observations"
+            )
     runtime.prepare_hour(ts)
 
 
@@ -70,8 +79,11 @@ async def hourly(
     manifests: tuple[Path, ...],
     fallback_path: Path | None,
     reference_path: Path | None,
+    history_path: Path | None = None,
 ) -> None:
-    paths = manifests + tuple(path for path in (fallback_path, reference_path) if path is not None)
+    paths = manifests + tuple(
+        path for path in (fallback_path, reference_path, history_path) if path is not None
+    )
     previous = (hour_key(datetime.now(UTC)), await asyncio.to_thread(signature, paths))
     while True:
         # Poll publication metadata, not pixels. P2 can publish after the hour.
@@ -81,7 +93,9 @@ async def hourly(
         if current == previous:
             continue
         pending = asyncio.create_task(
-            asyncio.to_thread(refresh, runtime, now, manifests, fallback_path, reference_path)
+            asyncio.to_thread(
+                refresh, runtime, now, manifests, fallback_path, reference_path, history_path
+            )
         )
         try:
             await asyncio.shield(pending)
