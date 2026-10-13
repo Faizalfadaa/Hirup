@@ -68,9 +68,13 @@ def _refresh(
         runtime.references = references
     if runtime.cog is not None:
         runtime.cog.reload(manifests)
-    if history_path is not None and runtime.advice_aq is not None:
+    if history_path is not None:
         try:
-            runtime.advice_aq.historical = HistoricalAQProvider.load(history_path)
+            historical = HistoricalAQProvider.load(history_path)
+            if runtime.advice_aq is not None:
+                runtime.advice_aq.historical = historical
+            if runtime.forecast is not None:
+                runtime.forecast.historical = historical
         except (ValueError, OSError):
             logging.getLogger(__name__).warning(
                 "Historical advice refresh unavailable; retaining prior observations"

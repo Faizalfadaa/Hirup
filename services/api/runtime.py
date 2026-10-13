@@ -24,6 +24,7 @@ from services.exposure.aq_provider import (
 )
 from services.exposure.aq_service import AQService
 from services.exposure.engine import Mode, Quantiles
+from services.exposure.forecast import ForecastService
 from services.exposure.geometry import BoundingBox, Point, hour_key
 from services.exposure.params import ExposureParams, load_params
 from services.routing.active_graph import load_graph
@@ -64,6 +65,10 @@ class Runtime:
     advice_aq: AdviceAQProvider | None = None
     plan_cache: PlanCache | None = None
     advice_cache: PlanCache | None = None
+    forecast: ForecastService | None = None
+
+    def configure_forecast(self, historical: HistoricalAQProvider | None = None) -> None:
+        self.forecast = ForecastService(self.aq.bounds, self.cog, historical)
 
     def configure_plan_cache(self) -> None:
         if self.planner is not None:
@@ -233,6 +238,7 @@ class Runtime:
                     "Historical advice input unavailable; requiring forecast coverage"
                 )
         runtime.configure_advice(demo=demo, historical=historical)
+        runtime.configure_forecast(historical=historical)
         if demo:
             runtime.demo_reference = float(settings["HIRUP_DEMO_REFERENCE_PM25"])
         elif settings.get("HIRUP_CITY_MEDIANS"):

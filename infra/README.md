@@ -741,6 +741,71 @@ three marked Docker integrations deselected and exercised by the direct runners
 above. Existing rasterio/NumPy deprecation warnings remain. Contract/schema and
 dependency lock files are unchanged.
 
+### T6.4a: hourly point forecast
+
+`GET /v1/aq/forecast?lat=...&lon=...&hours=24` returns the next 1–24 complete WIB
+hours, starting after the current hour. The requested horizon is complete: there
+are no silent gaps or partial success responses. Use the backend on port 8002
+with the existing `backend-api` target; the Compose API on port 8000 is still a
+placeholder.
+
+The service first samples P10/P50/P90 from loaded P2 COG manifests configured by
+the existing `HIRUP_AQ_MANIFESTS` setting. All hours must be `kind: forecast`,
+already published, from the same model version and hourly generation cycle,
+and consistent with their declared lead hours. Individual raster publications
+may finish seconds apart within that cycle. Each sample must match its manifest
+quality/model/generation metadata; a final metadata check rejects a publication
+change during the window. No current-hour nowcast or raw CAMS value is repeated
+as a future forecast. The response source is `model_corrected`, with the worst
+input `data_quality` and `X-Data-Age-Seconds` from the oldest raster publication.
+
+If corrected coverage is incomplete or invalid, the entire window falls back
+to the already supported `HIRUP_AQ_HISTORY` artifact, using its regional
+hour-of-week observation quantiles. This returns `source: historical_mean` and
+`data_quality: approximated`, never a mixture of corrected and historical hours.
+The observation period must end before today in WIB and cover every requested
+hour/location. Because the artifact records dates rather than precise observation
+timestamps, its age header is conservative: seconds since WIB midnight at the
+start of the final observation day. It is not a newly generated forecast age.
+
+Missing complete coverage returns RFC 9457 `503 data_unavailable`; points outside
+the pilot return `404 out_of_service_area`. Horizons outside 1–24 return 400.
+No extra request coordinates are cached or logged. Existing hourly/publication
+refresh updates COGs and the shared historical input off the event loop; invalid
+history retains the previous valid artifact. Files are not reopened per request.
+
+Production refuses synthetic forecasts. The normal `HIRUP_DEMO` route provider
+does not manufacture forecast inputs: without corrected/sourced history this
+endpoint remains unavailable. Tests explicitly opt into synthetic 2x2 COG
+fixtures to verify per-hour quantiles, 24-hour coverage, provenance/publication
+changes, historical fallback, freshness headers and the HTTP contract. Those
+fixtures are test-only and are never production, model or impact evidence.
+
+```bash
+uv run pytest -q tests/test_forecast.py tests/test_advice_aq.py services/api/tests tests/contract
+curl --fail-with-body "http://127.0.0.1:8002/v1/aq/forecast?lat=-6.2088&lon=106.8227&hours=24"
+```
+
+No new configuration names, dependencies or contract fields are required. Real
+P2 forecast artifacts are not present in this checkout, so production validation
+remains pending. Daily summary and kelurahan insights are separate subsequent
+features.
+
+Final validation passes Ruff lint/format (104 files), strict mypy (56 source
+files), lock consistency and 326 non-integration tests, including both live OSRM
+profiles. The 30 forecast tests include actual COG IO plus HTTP/schema checks.
+Existing rasterio/NumPy deprecations remain visible; contracts and schemas are
+unchanged.
+
+The first cold Docker golden replay passed 29/30 with one 06:30 OD02 503 at
+approximately 3.25 s. A separate same-query OTP diagnostic observed a 3.22 s
+ReadTimeout on walkReluctance 6 while other variants returned itineraries; later
+diagnostic replays returned candidates. No routing timeout or variants were
+changed. The final full cold replay passed 30/30, with plan p50 642.4 ms/p95
+3,933.6 ms, AQ-point p95 3.33 ms and zero plan-cache hits (33 misses including
+excluded warm-ups). These seeded-AQ/real-routing checks do not establish the
+3-second Should target or production P2 availability.
+
 PostgreSQL/PostGIS and new Rust/Go services remain deferred. Existing native
 geodesic/graph libraries are used, with no new dependencies or data downloads.
 Production P2 rasters, a deployed VM, and sustained load still require validation.
