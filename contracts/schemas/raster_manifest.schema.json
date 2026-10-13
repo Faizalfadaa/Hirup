@@ -1,0 +1,110 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hirup.app/contracts/schemas/raster_manifest.schema.json",
+  "title": "RasterManifest",
+  "description": "Written by P2 next to each hourly PM2.5 raster set (SPEC 9.4, 11.6). The API reads the 'latest' manifest to find the current COG files. Contract v1.0.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "manifest_version",
+    "model_version",
+    "generated_at",
+    "valid_hour",
+    "kind",
+    "lead_hours",
+    "crs",
+    "resolution_m",
+    "bbox_wgs84",
+    "units",
+    "files",
+    "data_quality"
+  ],
+  "properties": {
+    "manifest_version": {"const": "1.0"},
+    "model_version": {
+      "type": "string",
+      "description": "Matches model_version in model_registry.json, for example lgbm-2026w42",
+      "minLength": 1
+    },
+    "generated_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 with offset (+07:00)"
+    },
+    "valid_hour": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Start of the hour the raster represents, ISO 8601 with offset (+07:00)"
+    },
+    "kind": {
+      "enum": ["nowcast", "forecast"],
+      "description": "nowcast: current hour from the LightGBM model. forecast: bias-corrected CAMS forecast."
+    },
+    "lead_hours": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 24,
+      "description": "0 for nowcast; hours ahead of generated_at for forecast"
+    },
+    "crs": {"const": "EPSG:32748"},
+    "resolution_m": {"const": 100},
+    "bbox_wgs84": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["min_lat", "max_lat", "min_lon", "max_lon"],
+      "properties": {
+        "min_lat": {"type": "number", "minimum": -90, "maximum": 90},
+        "max_lat": {"type": "number", "minimum": -90, "maximum": 90},
+        "min_lon": {"type": "number", "minimum": -180, "maximum": 180},
+        "max_lon": {"type": "number", "minimum": -180, "maximum": 180}
+      }
+    },
+    "units": {"const": "ug/m3"},
+    "files": {
+      "type": "object",
+      "description": "Cloud-Optimized GeoTIFF paths relative to the data/ directory, named pm25_{yyyymmddhh}_{p10|p50|p90}.tif",
+      "additionalProperties": false,
+      "required": ["p10", "p50", "p90"],
+      "properties": {
+        "p10": {"$ref": "#/$defs/cog_path"},
+        "p50": {"$ref": "#/$defs/cog_path"},
+        "p90": {"$ref": "#/$defs/cog_path"}
+      }
+    },
+    "data_quality": {
+      "enum": ["real", "approximated", "synthetic"],
+      "description": "approximated when the IDW + CAMS fallback produced the raster"
+    },
+    "metrics": {
+      "type": "object",
+      "description": "Optional monitoring values, for example rolling_rmse_24h",
+      "additionalProperties": {"type": ["number", "null"]}
+    }
+  },
+  "$defs": {
+    "cog_path": {
+      "type": "string",
+      "pattern": "^[^/].*pm25_[0-9]{10}_p(10|50|90)\\.tif$"
+    }
+  },
+  "examples": [
+    {
+      "manifest_version": "1.0",
+      "model_version": "lgbm-2026w42",
+      "generated_at": "2026-10-16T07:04:12+07:00",
+      "valid_hour": "2026-10-16T07:00:00+07:00",
+      "kind": "nowcast",
+      "lead_hours": 0,
+      "crs": "EPSG:32748",
+      "resolution_m": 100,
+      "bbox_wgs84": {"min_lat": -6.30, "max_lat": -6.13, "min_lon": 106.76, "max_lon": 106.85},
+      "units": "ug/m3",
+      "files": {
+        "p10": "rasters/2026101607/pm25_2026101607_p10.tif",
+        "p50": "rasters/2026101607/pm25_2026101607_p50.tif",
+        "p90": "rasters/2026101607/pm25_2026101607_p90.tif"
+      },
+      "data_quality": "real"
+    }
+  ]
+}
