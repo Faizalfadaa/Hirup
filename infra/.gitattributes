@@ -1,0 +1,2 @@
+# Shell scripts and sourced configuration must keep Unix line endings on Windows.
+* text=auto eol=lf

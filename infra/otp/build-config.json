@@ -1,0 +1,11 @@
+{
+  "configVersion": "hirup-pilot-1",
+  "transitModelTimeZone": "Asia/Jakarta",
+  "osmDefaults": {
+    "timeZone": "Asia/Jakarta"
+  },
+  "osmCacheDataInMem": false,
+  "transitServiceStart": "-P1M",
+  "transitServiceEnd": "P3M",
+  "dataImportReport": true
+}
