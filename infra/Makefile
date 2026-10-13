@@ -3,6 +3,7 @@ SHELL := bash
 .SHELLFLAGS := -eu -o pipefail -c
 
 .PHONY: infra-help data-routing graphs up down smoke infra-config infra-check infra-logs logs
+.PHONY: active-graph active-benchmark
 
 infra-help:
 	@echo "data-routing  Download OSM/GTFS and clip OSM to the buffered pilot"
@@ -12,6 +13,8 @@ infra-help:
 	@echo "infra-config  Validate Docker Compose configuration"
 	@echo "infra-check   Run lint, type checks, and small local tests"
 	@echo "infra-logs    Show recent routing service logs"
+	@echo "active-graph  Build the walk/bike graph once from pilot OSM"
+	@echo "active-benchmark  Run latency benchmark with explicit synthetic AQ arguments"
 
 data-routing:
 	bash "infra/scripts/fetch_osm.sh"
@@ -43,3 +46,9 @@ infra-logs:
 	bash "infra/scripts/stack.sh" logs
 
 logs: infra-logs
+
+active-graph:
+	bash "infra/scripts/build_active_graph.sh"
+
+active-benchmark:
+	uv run python -m services.routing.benchmark_active $(BENCHMARK_ARGS)

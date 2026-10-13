@@ -12,6 +12,10 @@ dependencies = [
     "numpy>=2.1",
     "pyyaml>=6.0.2",
     "pyproj==3.7.1",
+    "osmnx==2.0.6",
+    "rustworkx==0.17.1",
+    "rasterio==1.4.3",
+    "shapely==2.1.1",
 ]
 
 [dependency-groups]

@@ -1,0 +1,99 @@
+"""Coordinate and polyline operations shared by sampling and active routing."""
+
+import math
+from collections.abc import Sequence
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from itertools import pairwise
+
+import numpy as np
+import numpy.typing as npt
+from pyproj import Geod, Transformer
+
+FloatArray = npt.NDArray[np.float64]
+GEOD = Geod(ellps="WGS84")
+TO_UTM = Transformer.from_crs("EPSG:4326", "EPSG:32748", always_xy=True)
+TO_WGS84 = Transformer.from_crs("EPSG:32748", "EPSG:4326", always_xy=True)
+
+
+@dataclass(frozen=True, slots=True)
+class Point:
+    lon: float
+    lat: float
+
+    def __post_init__(self) -> None:
+        if not (-180 <= self.lon <= 180 and -90 <= self.lat <= 90):
+            raise ValueError("Coordinates must be finite WGS84 longitude/latitude")
+
+
+@dataclass(frozen=True, slots=True)
+class BoundingBox:
+    min_lat: float
+    max_lat: float
+    min_lon: float
+    max_lon: float
+
+    def __post_init__(self) -> None:
+        Point(self.min_lon, self.min_lat)
+        Point(self.max_lon, self.max_lat)
+        if self.min_lat >= self.max_lat or self.min_lon >= self.max_lon:
+            raise ValueError("Bounding box limits must be ordered")
+
+    def contains(self, point: Point) -> bool:
+        return (
+            self.min_lat <= point.lat <= self.max_lat and self.min_lon <= point.lon <= self.max_lon
+        )
+
+    def clamp(self, point: Point) -> Point:
+        return Point(
+            min(self.max_lon, max(self.min_lon, point.lon)),
+            min(self.max_lat, max(self.min_lat, point.lat)),
+        )
+
+
+def hour_key(ts: datetime) -> datetime:
+    if ts.tzinfo is None or ts.utcoffset() is None:
+        raise ValueError("Timestamp must include a timezone")
+    return ts.astimezone(UTC).replace(minute=0, second=0, microsecond=0)
+
+
+def project_points(points: Sequence[Point]) -> tuple[FloatArray, FloatArray]:
+    x, y = TO_UTM.transform([p.lon for p in points], [p.lat for p in points])
+    return np.asarray(x, dtype=np.float64), np.asarray(y, dtype=np.float64)
+
+
+def unproject(x: float, y: float) -> Point:
+    lon, lat = TO_WGS84.transform(x, y)
+    return Point(float(lon), float(lat))
+
+
+def distance_m(a: Point, b: Point) -> float:
+    return float(GEOD.inv(a.lon, a.lat, b.lon, b.lat)[2])
+
+
+def polyline_length(points: Sequence[Point]) -> float:
+    return sum(distance_m(a, b) for a, b in pairwise(points))
+
+
+def sample_polyline(points: Sequence[Point], spacing_m: float) -> tuple[Point, ...]:
+    """Include both endpoints and globally spaced samples, not per-edge restarts."""
+    if not points:
+        raise ValueError("Polyline must contain a point")
+    if not math.isfinite(spacing_m) or spacing_m <= 0:
+        raise ValueError("Sample spacing must be finite and positive")
+    sampled = [points[0]]
+    traversed = 0.0
+    next_sample = spacing_m
+    for a, b in pairwise(points):
+        bearing, _, length = GEOD.inv(a.lon, a.lat, b.lon, b.lat)
+        length = float(length)
+        while next_sample < traversed + length:
+            lon, lat, _ = GEOD.fwd(a.lon, a.lat, bearing, next_sample - traversed)
+            sampled.append(Point(float(lon), float(lat)))
+            next_sample += spacing_m
+        traversed += length
+    if distance_m(sampled[-1], points[-1]) > 1e-6:
+        sampled.append(points[-1])
+    else:
+        sampled[-1] = points[-1]
+    return tuple(sampled)

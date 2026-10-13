@@ -26,6 +26,8 @@ Teammates using the shared API or mobile fixtures do not need a local OTP engine
 
 Run these commands from the repository root. On Windows, use Git Bash; quote the
 repository path when changing directories because it may contain spaces.
+From PowerShell, the bare `bash` command can select WSL instead. Open Git Bash
+explicitly; ensure the Windows uv executable's directory is on its `PATH`.
 
 ```bash
 make -f infra/Makefile infra-help
@@ -225,3 +227,105 @@ Verified on 13 October 2026 on Windows/Git Bash, Docker Desktop Linux/WSL2,
   lockfile entry were added with approval so CI can run the infra tests. Contracts
   are unchanged. Golden OD contract validation passes; end-to-end route requests
   remain unverified because the product planning endpoint awaits T5.
+
+## Active routing and AQ (T4)
+
+Install the pinned root environment with `uv sync --locked`. T4 adds OSMnx 2.0.6,
+rustworkx 0.17.1, rasterio 1.4.3 and shapely 2.1.1; pyproj 3.7.1 is already pinned.
+Build once using the existing clipped OSM, without another OSM download:
+
+```bash
+make -f infra/Makefile active-graph
+make -f infra/Makefile active-benchmark \
+  BENCHMARK_ARGS="--iterations 30 --trunk-penalty 2 --reference-pm25 40 --demo-min-pm25 10 --demo-max-pm25 80"
+```
+
+`active-graph` runs osmium in Docker to export complete highway ways, then OSMnx
+converts the local XML to directed walk/bike edges. Access and mode restrictions,
+one-way cycling (including reverse ways and contraflow tags), private nodes and
+motorway exclusions are retained. The graph and its edge-to-100-m-cell index are
+saved as versioned JSON/gzip under `data/graphs/`, which is ignored by Git. OSM
+conditional/time-dependent access tags are not interpreted; confirm access locally.
+
+The benchmark uses real street geometry and **synthetic AQ** with a fixed seed.
+Its concentration bounds, reference and trunk preference are explicit illustrative
+arguments. Do not use these values as calibrated production parameters or put its
+concentrations/doses in model metrics, the 50-OD report, or the pitch.
+
+For T5 integration, load the graph and provider once at startup, then call:
+
+```python
+from services.exposure.aq_provider import (
+    CogAQProvider,
+    FallbackAQProvider,
+    IdwAQProvider,
+)
+from services.routing.active_graph import load_graph
+from services.routing.active_params import load_active_params
+from services.routing.active_router import ActiveRouter
+
+# data_dir, manifest_paths, station_samples and cams_by_hour come from P2.
+graph = load_graph(graph_path)
+cog = CogAQProvider(data_dir, manifest_paths, bounds=graph.bounds)
+fallback = IdwAQProvider(station_samples, graph.bounds, cams=cams_by_hour)
+aq = FallbackAQProvider(cog, fallback)
+router = ActiveRouter(
+    graph, load_active_params(), aq, trunk_penalty_factor=trunk_preference
+)
+router.refresh_aq(departure, reference_pm25=city_median_for_hour)
+routes = router.plan(origin, destination, departure, mode="WALK")
+```
+
+The snippet names externally supplied inputs, rather than fabricating P2 data.
+`origin` and `destination` are `services.exposure.geometry.Point(lon, lat)`;
+`departure` must include a timezone. Refresh the AQ edge cache before routing a
+new hour (including forecast hours), and call `cog.reload(manifest_paths)` when P2
+publishes a new set. A failed refresh preserves the previous snapshot; a new-hour
+request still requires its own successful refresh. Close the COG provider at shutdown.
+Refresh precomputes eight weighted graph views (two modes × four lambdas) to avoid
+Python/numpy lookups inside each Dijkstra search. This increases memory use; run
+refresh in a startup/background worker, outside request handling. Keep the previous
+snapshot available until its replacement is ready. Only one hour is cached here;
+orchestration must prepare the required hour or retain an original leg if unavailable.
+Each result includes geometry, physical duration, length, sampled PM2.5 quantiles,
+quality and merged lambda labels. Unmapped straight connectors are included in
+distance and duration and mark an otherwise real result `approximated`.
+
+`CogAQProvider` follows the frozen raster manifest: projected EPSG:32748, aligned
+100 m quantile grids and relative paths within `data/`. It samples a pixel window,
+rejects nodata or unordered quantiles, and uses the requested hour's nowcast or
+forecast. Its `raster_median` covers only that raster extent; it must not be used
+as a whole-city reference without evidence of city coverage. Production fallback
+uses current supplied stations or CAMS and stays `approximated`; it never invents
+background concentrations or automatically switches to synthetic data.
+
+TODO(verify): the contract's active speeds/design parameters have `verified_by:
+null`. It provides no numeric trunk penalty. Confirm the explicit trunk preference
+and the hourly city median with the owners before production integration. No new
+scientific constant or contract field is introduced here.
+
+Orchestration must map `OutOfServiceAreaError` to the contract's 404
+`out_of_service_area` Problem Details; handle `AQUnavailableError` and
+`NoActiveRouteError` without making the whole multimodal plan fail. These modules
+perform no API wiring and keep no origin/destination or result cache.
+
+On this Windows machine, inherited `PROJ_LIB`/`PROJ_DATA` from PostgreSQL selected
+an incompatible database for rasterio. Clear them **in the current test shell**
+so rasterio uses its bundled database; no system setting needs changing:
+
+```powershell
+Remove-Item Env:PROJ_LIB -ErrorAction SilentlyContinue
+Remove-Item Env:PROJ_DATA -ErrorAction SilentlyContinue
+uv run pytest -q
+```
+
+Measured on 13 October 2026 on the same Windows machine: 208,790 nodes,
+454,932 directed edges and 17,355 grid cells. A warm Senayan–Setiabudi plan
+(all four lambdas, deduplication and final 25 m sampling included) over 30 iterations
+had walking p50 197.4 ms / p95 225.6 ms / max 236.5 ms at 3,226.7 m, with three
+variants; cycling p50 101.8 ms / p95 119.7 ms / max 125.3 ms at 3,894.7 m, with one
+variant. Both satisfy the 300 ms latency target. Startup graph loading and the
+9.48-second hourly AQ refresh are excluded from request latency. These local
+synthetic-AQ timings do not establish VM latency or COG production performance.
+An earlier uncached-weight Make run exceeded the target (walking p95 441 ms);
+the final cache implementation and refresh regression test address that overhead.
