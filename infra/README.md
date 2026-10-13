@@ -441,3 +441,208 @@ returned 200 with one option and ten dose-bearing legs. A cold native plan first
 returned 503 while routing searches exceeded their timeout. Engine warm-up and
 production latency must be checked on the deployed host; no fixture substitutes
 an engine failure. The temporary local backend used for this check was stopped.
+
+## Departure advice (T6, first feature)
+
+`GET /v1/routes/departure-advice` plans 13 departures, spaced 15 minutes from the
+requested `around` time (inclusive ±90 minutes). The center preserves the requested
+minute/second. Each slot compares the balanced option for the requested sensitivity,
+with P10/P50/P90 dose, duration, and signed changes against the center slot.
+Negative dose change means lower dose. The best slot minimizes P50 dose, then
+duration, then distance from the requested time. Road comparisons are omitted.
+Two slot plans at a time share a semaphore across advice requests. No OD, route
+result or advice response was cached in the T6.1 baseline measured below. T6.2
+adds caching of plans for approximate grid representatives, as described next.
+
+Production uses sourced current/past-hour AQ; future hours require a published
+`kind: forecast` raster manifest from P2. Raw future CAMS or a repeated current
+nowcast is not presented as corrected forecast advice. The fallback is observed
+regional hour-of-week statistics labelled `approximated`, never an invented trend.
+Synthetic advice is confined to the explicit seeded demo mode described above.
+
+Set `HIRUP_AQ_HISTORY` to an internal JSON adapter file under ignored `data/`.
+This adapter does not change the frozen API or P2 raster contract. Required fields:
+
+| Field | Required value/content |
+| --- | --- |
+| `source` | Nonempty title/URL identifying the actual observation source |
+| `data_quality` | `approximated` |
+| `units` | `ug/m3` |
+| `period_start`, `period_end` | ISO dates bounding the observed period, in order |
+| `bbox_wgs84` | `min_lat`, `max_lat`, `min_lon`, `max_lon` of the regional statistics |
+| `hours` | Map from `weekday:HH` to `{p10, p50, p90}`; Monday=0, Sunday=6 |
+
+Quantiles must be finite, nonnegative and ordered, calculated from the declared
+observations by the data lane; this service only reads them. Regional statistics
+are spatially uniform within their stated bbox and approximate local exposure.
+No extrapolation occurs for missing weekdays/hours or outside the artifact bbox.
+The observation period must end before both today and the requested day. Lookup
+uses Asia/Jakarta, including midnight/week boundaries. Files load at startup and
+on changed publication metadata in the hourly worker. A missing/malformed history
+file retains prior valid history and does not block regular AQ refresh. The plan
+and point services keep their existing policy; the stricter forecast/history
+policy applies to advice only.
+
+All 13 slot plans must succeed. Missing routing/AQ coverage produces 503 Problem
+Details instead of partial advice or synthetic production data. Outside-area OD
+returns 404. If the center dose is zero and another slot is positive, the required
+percentage is undefined and the endpoint returns 503; all-zero windows have zero
+deltas. Production historical/forecast inputs and deployed-host latency remain
+unverified. Advice performs 13 plans and has its own latency; it is not the
+single-plan p95 target.
+Active routing keeps the T5 hourly weight cache: unprepared hours use baseline
+geometry scored with that hour's advice AQ. Future-hour active weight preparation
+is not performed inside the advice request.
+
+With `make backend-api` running and sourced inputs configured:
+
+```bash
+curl --get http://127.0.0.1:8002/v1/routes/departure-advice \
+  --data-urlencode 'origin_lat=-6.2891' --data-urlencode 'origin_lon=106.7745' \
+  --data-urlencode 'destination_lat=-6.2088' --data-urlencode 'destination_lon=106.8227' \
+  --data-urlencode 'around=2026-10-14T07:30:00+07:00' \
+  --data-urlencode 'mode=transit' --data-urlencode 'sensitivity=rentan'
+```
+
+To validate the window and measure local advice latency (no downloads):
+
+```bash
+uv run python tests/integration/advice_runner.py --date 2026-10-14 \
+  --demo-min-pm25 10 --demo-max-pm25 80 --reference-pm25 40 --trunk-penalty 2 \
+  --output data/benchmarks/t6-advice-latency.json
+HIRUP_TEST_ADVICE=1 uv run pytest -q -m integration tests/integration/test_departure_advice.py
+```
+
+As in the golden runner, these values are explicit test/demo inputs, not verified
+scientific assumptions. The runner uses one public golden OD at 07:30 and 17:30,
+three modes and two sensitivities (12 advice requests, each with 13 slot plans).
+It checks schema, synthetic label and center deltas. Graph load/hourly preparation
+and one transit warm-up per time are excluded; slot routing, scoring and HTTP
+serialization are included. The small sample is a local diagnostic, not production
+latency evidence, a model score or an impact claim. Ordinary tests need no Docker
+or external AQ artifact. Cache, plan optimization and other T6 endpoints are
+separate features.
+
+Local verification on 13 October 2026 for departures on 14 October: all 12 advice
+requests passed with 13 slots each. Advice p50 was 6,535.8 ms and p95 8,779.4 ms
+(maximum 9,147.9 ms). This is separate from the single-plan target; no cache or
+variant pruning was introduced in this feature. Production COG/historical timing
+remains unverified.
+
+The accompanying 30-case golden regression replay passed: plan p50 848.9 ms,
+p95 4,217.3 ms and point p95 4.66 ms. The p95 3-second Should target remains open;
+this replay does not demonstrate an optimization change.
+
+## Plan cache (T6, second feature)
+
+The runtime now wraps plan generation in an in-process LRU cache: 600-second
+monotonic TTL, at most 128 completed entries and 16 distinct in-flight jobs per
+cache. Identical simultaneous requests share one computation. A caller disconnect
+does not cancel a computation needed by another caller. Failed requests are not
+cached; excess distinct in-flight work returns 503. Plan and advice use separate
+caches because their AQ fallback policies differ. Cached advice now plans one slot
+at a time: each slot already fans out OTP variants. This avoids the six simultaneous
+OTP searches produced by overlapping bus-only slots. The T6.1 baseline above used
+two slots concurrently.
+
+To meet the location minimization rule, requests are planned from deterministic
+centers of 100 m EPSG:32748 cells, clamped to the pilot bbox. Exact incoming
+coordinates are used only to identify the cells, never passed to a retained job
+or saved with the result. The same cells produce the same representative query
+regardless of the precise pin location. Cached objects contain domain results,
+not HTTP responses, request IDs or users. Serialization creates a new request ID
+for each reply.
+
+This changes route endpoints to approximate locations, with quality at least
+`approximated` (synthetic remains synthetic) and an Indonesian location note on
+plan responses. A representative can be on a different side of a physical barrier;
+users must check access from their actual location. Very short trips within one
+cell can collapse to the same endpoint. The input coordinates are not restored
+into cached polylines. This behavior was explicitly approved for the pilot.
+
+The key includes origin/destination cells, local-equivalent 15-minute slot,
+the exact timezone-normalized departure/arrival time, profile, mode, max walking
+distance, excluded modes, transfer preference, arrival/departure direction and
+comparison preference. Requests at different exact times do not share a transit
+result even within the same slot: simply shifting a cached timetable can miss a
+service. Consequently default-now requests with distinct timestamps often miss;
+the cache benefits repeated searches with the same selected departure time.
+
+AQ publication refresh, including history/reference changes or partial failures,
+invalidates both caches. Preparing new active weights also invalidates results.
+Versioned in-flight work cannot refill the cache after invalidation; it retries
+against the new generation once, then returns 503 if inputs keep changing. Cached
+data is immutable. Workers/processes have separate caches; cross-process sharing
+is not provided. TTL expiry is enforced on lookup, with expired entries removed
+on insertion; memory remains bounded even during idle periods.
+
+The schema, graph loading and sourced AQ policies are unchanged. PostgreSQL/PostGIS
+and additional Rust/Go services remain options to evaluate after profiling shows
+a concrete need. Neither was added for this cache feature.
+
+Measure cache misses, repeated hits, eight identical simultaneous requests and
+four distinct requests on public golden OD:
+
+```bash
+uv run python tests/integration/cache_runner.py --date 2026-10-14 \
+  --demo-min-pm25 10 --demo-max-pm25 80 --reference-pm25 40 --trunk-penalty 2 \
+  --output data/benchmarks/t6-cache-latency.json
+HIRUP_TEST_CACHE=1 uv run pytest -q -m integration tests/integration/test_plan_cache.py
+```
+
+The report distinguishes miss/hit/burst latency and verifies response schemas,
+quality labels and dose sums. It uses real Docker engines and explicit seeded AQ
+for integration/latency only. Graph loading and hourly preparation are excluded.
+These small bursts are a diagnostic, not a production capacity or throughput
+claim. Production COG performance and deployed-host load remain unverified.
+
+The dedicated local run succeeded for all 122 recorded requests:
+
+| Phase | Requests | p50 | p95 |
+| --- | --- | --- | --- |
+| Empty cache, unique public OD | 10 | 978.6 ms | 3,317.4 ms |
+| Repeated cache hits | 100 | 9.33 ms | 13.70 ms |
+| Identical concurrent misses | 8 | 1,037.3 ms | 1,043.1 ms |
+| Distinct concurrent misses | 4 | 5,885.8 ms | 6,124.9 ms |
+
+The identical burst performed one upstream plan with seven joined callers.
+The distinct burst exceeds the 5-second Must target on this host; the cache does
+not solve the CPU/upstream cost of unrelated new searches. Admission/rate limits,
+further profiling and deployed-host validation remain necessary before claiming
+production capacity. The 10-case miss p95 also remains above the 3-second Should
+target. Do not combine the hit and miss samples into a headline latency figure.
+
+Profiling found repeated active-leg graph searches among transit candidates. The
+planner now reuses identical endpoint/mode/hour searches within a single request,
+including unavailable searches, while checking each leg's original detour bounds.
+The memo is discarded before responding; it stores no coordinates across requests.
+No candidate mode, walk-reluctance variant, or itinerary count was removed.
+
+The API runtime also bounds initial transit departure searches to 15 minutes,
+rather than the previous 30-minute window. This is an operational search tradeoff:
+departures beyond that window may no longer be candidates. It does not change the
+13-slot ±90-minute advice window, and is not a GTFS or exposure constant. Revalidate
+coverage when new GTFS feeds or service patterns arrive. Direct OTP client defaults
+remain separate from this runtime setting.
+
+On this host, the first cache regression replay passed 29/30 cases with one OTP
+timeout; an exact-coordinate diagnostic also timed out for the same case. A longer
+diagnostic timeout exposed roughly 6.84 s of OTP generation and 1.75 s of downstream
+processing in one primary-only experiment. A 15-minute search restored 30/30
+options but initially measured plan p95 6,206.4 ms, above the Must target. After
+request-local active-search reuse, Make golden-od again passed 30/30 and the Must
+latency gates: plan p50 1,067.9 ms/p95 3,758.4 ms and AQ point p95 4.28 ms.
+The golden runner's one-pair warm-up now primes that pair's cache, so this replay
+mixes three hits with 27 misses; the dedicated runner separates them. The p95
+3-second Should target for new searches remains open. These observations do not
+prove deployed-host capacity or model accuracy.
+
+Post-cache advice regression initially passed 10/12 windows: both evening transit
+windows returned 503 under combined slot/routing/graph load. An isolated scan
+found generated routes with GTFS headways in all 13 evening slots. After limiting
+cached advice to one slot at a time, the full direct runner passed 12/12 windows,
+13 slots each, across both profiles and transit/walk/bike. Cold advice p50 was
+10,179.4 ms/p95 13,937.2 ms (maximum 14,471.6 ms). This is slower than the T6.1
+baseline and remains a user-experience/performance concern; reliability of this
+local replay does not establish production availability. Repeated identical advice
+can use its plan cache, but this run measures fresh windows, not cache hits.

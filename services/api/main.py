@@ -60,7 +60,12 @@ def create_app(runtime: Runtime | None = None) -> FastAPI:
             references = (
                 Path(os.environ["HIRUP_CITY_MEDIANS"]) if os.getenv("HIRUP_CITY_MEDIANS") else None
             )
-            worker = asyncio.create_task(hourly(configured, manifests, fallback, references))
+            history = (
+                Path(os.environ["HIRUP_AQ_HISTORY"]) if os.getenv("HIRUP_AQ_HISTORY") else None
+            )
+            worker = asyncio.create_task(
+                hourly(configured, manifests, fallback, references, history)
+            )
             try:
                 yield
             finally:

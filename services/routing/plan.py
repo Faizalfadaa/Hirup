@@ -3,7 +3,7 @@
 import asyncio
 from collections.abc import Sequence
 from dataclasses import replace
-from datetime import timedelta
+from datetime import datetime, timedelta
 from itertools import pairwise
 from typing import Protocol, cast
 
@@ -15,9 +15,9 @@ from services.exposure.aq_provider import (
     OutOfServiceAreaError,
 )
 from services.exposure.engine import LegInput, Mode, WaitPlace, trip_exposure
-from services.exposure.geometry import BoundingBox, distance_m, hour_key, sample_polyline
+from services.exposure.geometry import BoundingBox, Point, distance_m, hour_key, sample_polyline
 from services.exposure.params import ExposureParams
-from services.routing.active_router import ActiveMode, ActiveRouter, NoActiveRouteError
+from services.routing.active_router import ActiveMode, ActiveRoute, ActiveRouter, NoActiveRouteError
 from services.routing.gtfs import GtfsHeadways
 from services.routing.models import (
     Candidate,
@@ -203,6 +203,8 @@ class Planner:
         if router is None:
             return []
         result = []
+        # This memo lives only until this request finishes; detour limits remain per leg.
+        paths: dict[tuple[Point, Point, datetime, Mode], tuple[ActiveRoute, ...] | None] = {}
         for candidate in candidates:
             if not any(leg.route is not None for leg in candidate.legs):
                 continue
@@ -212,9 +214,21 @@ class Planner:
             for index, leg in enumerate(legs):
                 if leg.mode in {Mode.WALK, Mode.BICYCLE} and len(leg.points) >= 2:
                     try:
-                        routes = router.plan(
-                            leg.points[0], leg.points[-1], clock, cast(ActiveMode, leg.mode.value)
-                        )
+                        key = (leg.points[0], leg.points[-1], hour_key(clock), leg.mode)
+                        if key not in paths:
+                            try:
+                                paths[key] = router.plan(
+                                    leg.points[0],
+                                    leg.points[-1],
+                                    clock,
+                                    cast(ActiveMode, leg.mode.value),
+                                )
+                            except (AQUnavailableError, NoActiveRouteError, OutOfServiceAreaError):
+                                paths[key] = None
+                        routes = paths[key]
+                        if routes is None:
+                            clock += timedelta(seconds=leg.duration_s)
+                            continue
                         best = min(routes, key=lambda r: r.mean_pm25.p50 * r.duration_s)
                         if best.distance_m <= query.max_walk_m and (
                             best.duration_s <= leg.duration_s * (1 + router.params.max_detour_frac)
