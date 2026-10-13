@@ -19,11 +19,11 @@ async def test_health_returns_ok_with_unknown_data_age(client: httpx.AsyncClient
 
     assert resp.status_code == 200
     assert resp.json() == {
-        "status": "ok",
+        "status": "degraded",
         "version": version("hirup"),
         "model_version": None,
         "data_age_seconds": None,
-        "data_quality": "real",
+        "data_quality": "approximated",
     }
 
 

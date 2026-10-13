@@ -1,10 +1,22 @@
+import asyncio
+import json
+import logging
+import os
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager, suppress
+from datetime import datetime
+from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
+import httpx
 from fastapi import APIRouter, FastAPI
 from fastapi.openapi.utils import get_openapi
 
 from services.api import errors
+from services.api.refresh import hourly
 from services.api.routes import aq, greenspaces, health, insights, routes
+from services.api.runtime import Runtime
 from services.api.schemas.problem import Problem
 
 CONTRACT_VERSION = "1.0.0"
@@ -20,12 +32,51 @@ polylines encoded with precision 6; every successful response carries `data_qual
 """
 
 
-def create_app() -> FastAPI:
+def create_app(runtime: Runtime | None = None) -> FastAPI:
+    @asynccontextmanager
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        if runtime is not None:
+            yield
+            return
+        async with httpx.AsyncClient(trust_env=False) as http:
+            try:
+                configured = await asyncio.to_thread(Runtime.from_env, http)
+                await asyncio.to_thread(
+                    configured.prepare_hour, datetime.now(ZoneInfo("Asia/Jakarta"))
+                )
+            except (ValueError, OSError, KeyError):
+                logging.getLogger(__name__).warning(
+                    "Routing/AQ startup inputs unavailable; service degraded"
+                )
+                configured = Runtime.unavailable()
+            app.state.runtime = configured
+            try:
+                manifests = tuple(
+                    Path(name) for name in json.loads(os.getenv("HIRUP_AQ_MANIFESTS") or "[]")
+                )
+            except (TypeError, ValueError):
+                manifests = ()
+            fallback = Path(os.environ["HIRUP_AQ_INPUTS"]) if os.getenv("HIRUP_AQ_INPUTS") else None
+            references = (
+                Path(os.environ["HIRUP_CITY_MEDIANS"]) if os.getenv("HIRUP_CITY_MEDIANS") else None
+            )
+            worker = asyncio.create_task(hourly(configured, manifests, fallback, references))
+            try:
+                yield
+            finally:
+                worker.cancel()
+                with suppress(asyncio.CancelledError):
+                    await worker
+                if configured.cog is not None:
+                    configured.cog.close()
+
     app = FastAPI(
         title="Hirup API",
         version=CONTRACT_VERSION,
         separate_input_output_schemas=False,
+        lifespan=lifespan,
     )
+    app.state.runtime = runtime or Runtime.unavailable()
     errors.install(app)
     v1 = APIRouter(prefix="/v1")
     for module in (routes, aq, insights, greenspaces, health):

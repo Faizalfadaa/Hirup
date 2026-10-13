@@ -52,3 +52,14 @@ def test_product_request_returns_problem_without_logging_coordinates(
     assert body["data_quality"] == "approximated"
     assert "106.800123" not in json.dumps(body)
     assert capsys.readouterr().err == ""
+
+
+def test_repeated_post_bodies_are_consumed_without_socket_resets(api: str) -> None:
+    for size in (26, 65536, 131072):
+        request = urllib.request.Request(api + "/v1/routes/plan", data=b"x" * size)
+        with pytest.raises(urllib.error.HTTPError) as failure:
+            urllib.request.urlopen(request, timeout=3)
+        response = failure.value
+        assert response.code == 503
+        assert json.load(response)["status"] == 503
+        response.close()

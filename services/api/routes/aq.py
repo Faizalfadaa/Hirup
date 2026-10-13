@@ -1,13 +1,19 @@
+import asyncio
 import datetime as dt
 from typing import Annotated, Any
+from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, Path, Query, Response
+from fastapi import APIRouter, Path, Query, Request, Response
 from pydantic import AwareDatetime
 
-from services.api.errors import not_implemented, problem_responses
+from services.api.dependencies import get_runtime, unavailable
+from services.api.errors import ProblemError, not_implemented, problem_responses
 from services.api.schemas.aq import AqForecastResponse, AqPointResponse, DailySummaryResponse
-from services.api.schemas.common import Latitude, Longitude
+from services.api.schemas.common import DataQuality, Latitude, Longitude, Pm25Quantiles
 from services.api.schemas.examples import AQ_FORECAST, AQ_POINT, DAILY_SUMMARY
+from services.api.schemas.problem import ProblemType
+from services.exposure.aq_provider import AQUnavailableError, OutOfServiceAreaError
+from services.exposure.geometry import Point, project_points
 
 router = APIRouter(prefix="/aq", tags=["air quality"])
 
@@ -40,9 +46,42 @@ class PngResponse(Response):
     openapi_extra={"x-priority": "M"},
 )
 async def point(
-    lat: Annotated[Latitude, Query()], lon: Annotated[Longitude, Query()], ts: TsQuery = None
+    request: Request,
+    response: Response,
+    lat: Annotated[Latitude, Query()],
+    lon: Annotated[Longitude, Query()],
+    ts: TsQuery = None,
 ) -> AqPointResponse:
-    raise not_implemented("T5")
+    runtime = get_runtime(request)
+    clock = ts or dt.datetime.now(ZoneInfo("Asia/Jakarta"))
+    location = Point(lon, lat)
+    try:
+        samples = await asyncio.to_thread(runtime.aq.point, location, clock)
+    except (AQUnavailableError, OutOfServiceAreaError) as exc:
+        raise unavailable(exc) from None
+    x, y = project_points([location])
+    age = (
+        max(
+            0,
+            round(
+                (dt.datetime.now(ZoneInfo("Asia/Jakarta")) - samples.generated_at).total_seconds()
+            ),
+        )
+        if samples.generated_at is not None
+        else runtime.data_age(clock, samples.source)
+    )
+    response.headers["X-Data-Age-Seconds"] = str(age)
+    return AqPointResponse(
+        lat=lat,
+        lon=lon,
+        cell_id=f"{int(x[0] // 100)}:{int(y[0] // 100)}",
+        valid_hour=samples.valid_hour.astimezone(ZoneInfo("Asia/Jakarta")),
+        pm25=Pm25Quantiles(
+            p10=float(samples.p10[0]), p50=float(samples.p50[0]), p90=float(samples.p90[0])
+        ),
+        ispu_category=None,
+        data_quality=DataQuality(samples.data_quality),
+    )
 
 
 @router.get(
@@ -59,12 +98,22 @@ async def point(
     openapi_extra={"x-priority": "M"},
 )
 async def tile(
+    request: Request,
     z: Annotated[int, Path(ge=0, le=20)],
     x: Annotated[int, Path(ge=0)],
     y: Annotated[int, Path(ge=0)],
     ts: TsQuery = None,
 ) -> PngResponse:
-    raise not_implemented("T5")
+    runtime = get_runtime(request)
+    clock = ts or dt.datetime.now(ZoneInfo("Asia/Jakarta"))
+    try:
+        data, quality = await asyncio.to_thread(runtime.aq.tile, z, x, y, clock)
+    except (AQUnavailableError, OutOfServiceAreaError) as exc:
+        raise unavailable(exc) from None
+    except ValueError:
+        raise ProblemError(ProblemType.VALIDATION_ERROR, 400, "Indeks tile tidak valid.") from None
+    age = max(0, round((dt.datetime.now(ZoneInfo("Asia/Jakarta")) - clock).total_seconds()))
+    return PngResponse(data, headers={"X-Data-Age-Seconds": str(age), "X-Data-Quality": quality})
 
 
 @router.get(

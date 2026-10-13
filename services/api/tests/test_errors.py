@@ -59,7 +59,15 @@ async def test_unknown_request_field_is_rejected(client: httpx.AsyncClient) -> N
 
 
 async def test_unimplemented_endpoint_is_501_problem(client: httpx.AsyncClient) -> None:
-    resp = await client.post("/v1/routes/plan", json=PLAN_REQUEST)
+    resp = await client.get(
+        "/v1/routes/departure-advice",
+        params={
+            "origin_lat": -6.2,
+            "origin_lon": 106.8,
+            "destination_lat": -6.21,
+            "destination_lon": 106.81,
+        },
+    )
 
     _assert_problem(resp, 501, "not_implemented")
 

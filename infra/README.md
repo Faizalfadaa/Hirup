@@ -329,3 +329,115 @@ variant. Both satisfy the 300 ms latency target. Startup graph loading and the
 synthetic-AQ timings do not establish VM latency or COG production performance.
 An earlier uncached-weight Make run exceeded the target (walking p95 441 ms);
 the final cache implementation and refresh regression test address that overhead.
+
+## Backend request-to-dose integration (T5)
+
+The product backend runs separately from the T2 readiness placeholder while deploy
+wiring is prepared. On Windows, use Git Bash from the repository root:
+
+```bash
+make -f infra/Makefile up
+export HIRUP_DEMO=true
+export HIRUP_DEMO_MIN_PM25=10 HIRUP_DEMO_MAX_PM25=80
+export HIRUP_DEMO_REFERENCE_PM25=40 HIRUP_TRUNK_PENALTY=2
+make -f infra/Makefile backend-api
+```
+
+The backend listens on `127.0.0.1:8002` (override `BACKEND_HOST_PORT`). It suppresses
+HTTP access logs because query strings can contain locations. Its outbound clients
+also suppress request-URL logging. Export process variables explicitly; the backend
+does not read `.env`. In a second terminal, verify `/v1/health`, `/v1/aq/point`, and
+POST `/v1/routes/plan` using coordinates/time from `contracts/golden_od.json`.
+Startup loads the street graph once and prepares current-hour weights before serving.
+If a requested hour has no weight snapshot, active routing can use its lambda-zero
+geometry and then score it with that hour's AQ. Missing AQ still returns 503.
+
+Demo concentration bounds/reference and the trunk preference above are illustrative
+configuration, not calibrated parameters. Demo responses carry `synthetic`, low
+confidence and an explicit disclaimer. Demo tiles use a continuous grey scale;
+they do not invent ISPU thresholds. Turn demo off for production. With no actual
+AQ inputs, production returns `503 data_unavailable`; an outside-pilot origin,
+destination, point or tile returns `404 out_of_service_area`.
+
+Production inputs are configured as follows (names are in `.env.example`):
+
+- `HIRUP_DATA_DIR`: data directory, default repository `data/`.
+- `HIRUP_ACTIVE_GRAPH`: optional override of `data/graphs/active.json.gz`.
+- `HIRUP_TRUNK_PENALTY`: explicit verified cycling preference; active routing is
+  disabled until supplied. No numeric production default is invented.
+- `HIRUP_AQ_MANIFESTS`: JSON array of P2 manifest paths, including relevant forecast
+  hours. Each manifest follows the frozen raster contract and points within the data directory.
+- `HIRUP_AQ_INPUTS`: optional sourced adapter JSON with `source`, `data_quality`
+  (`real` or `approximated`), `stations` and/or `cams`. Station entries contain
+  `point: {lon, lat}`, `valid_hour`, and `pm25: {p10, p50, p90}`. `cams` maps aware
+  ISO timestamps to quantiles. This is local adapter configuration, not a new P2 contract.
+- `HIRUP_CITY_MEDIANS`: optional sourced JSON mapping aware ISO hours to
+  `{value, source}`. Without a reference, exposure scoring still works but active
+  optimization retains baseline geometry.
+- `OTP_URL`, `OSRM_CAR_URL`, `OSRM_MOTO_URL`: routing engine URLs. Local defaults
+  are `http://127.0.0.1:18080/otp/gtfs/v1`, `http://127.0.0.1:5000`, and
+  `http://127.0.0.1:5001`.
+
+The startup worker checks publication metadata once a minute and reloads on a new
+hour or changed inputs. It catches artefacts published after the hour boundary;
+unchanged rasters are not reopened per request. Reload errors retain prior data and
+never enable synthetic production fallback. Forecast data age uses its generation
+timestamp, rather than treating a future valid hour as newly generated data.
+
+Supply pre-rendered, verified ISPU-coloured PNGs under
+`data/tiles/YYYYMMDDHH/z/x/y.png` for production. Missing tiles return 503. Point
+categories and warning thresholds remain null while the frozen ISPU breakpoint
+value is null. Emissions, fares, fuel costs and daily dose share likewise remain
+null when their contract inputs are unverified. Road comparisons expose raw OSRM
+estimates with a null congestion factor and an explicit assumption until a sourced
+hourly profile is supplied. `TOMTOM_API_KEY` is reserved by bootstrap; this T5
+configuration uses the contract profile and does not send coordinates to TomTom.
+
+OTP calls the three walk-reluctance variants concurrently. With complete feeds it
+uses all, rail-first and bus-only sets; the actual TransJakarta-only feed collapses
+equivalent mode sets and skips missing rail. The departure search window is 30
+minutes, `numItineraries=5`. This bounds a search strategy rather than changing
+exposure parameters. Candidates still obey the requested walking limit and contain
+actual transit legs. Headways come from GTFS frequencies or active timetable
+intervals, including calendar exceptions, stop offsets and service times after
+midnight. Unknown headways cause that candidate to be dropped, never fabricated.
+
+Expected WAIT legs use headway/2. Result timelines represent expected travel with
+those waits, rather than a promise to board a specific realtime departure. Trip
+exposure and ranking remain pure, use contract values, preserve quantile ordering,
+and merge identical labels. CO2/cost assumptions are separate from route ranking.
+There is no persistent origin/destination or result cache in T5; the 10-minute
+cache, departure advice and other Should endpoints remain T6 work.
+
+Run the real-routing integration/latency check (no new OSM download):
+
+```bash
+make -f infra/Makefile golden-od \
+  GOLDEN_ARGS="--date 2026-10-14 --demo-min-pm25 10 --demo-max-pm25 80 --reference-pm25 40 --trunk-penalty 2 --output data/benchmarks/t5-latency.json"
+HIRUP_TEST_GOLDEN=1 uv run pytest -q -m integration tests/integration/test_golden_od.py
+```
+
+The runner uses in-process HTTP requests through ASGITransport to the FastAPI app;
+its clients make network calls to the Docker OTP/OSRM stack. It checks 10 OD ×
+three slots with the default 1,000 m
+walking limit, response schema, option count and per-leg dose totals, then measures
+AQ point latency. Graph loading/hourly refresh and one public-pair JVM warm-up per
+slot are excluded from timed requests; API serialization and exposure calculation
+are included. This does not measure a deployed VM, TLS or production COG latency.
+The marked test is opt-in; default CI performs no download or live routing calls.
+
+Verified locally on 13 October 2026 for departures on 14 October: **30/30 golden
+requests passed**, at least one option each. The final Make run measured plan p50
+1,130.5 ms/p95 4,759.6 ms and point p95 9.03 ms; maximum plan latency was 5,555.2 ms.
+An earlier warm run measured plan p50 621.5 ms/p95 4,290.8 ms and point p95 2.13 ms.
+These local runs meet the p95 Must targets; the p95 3-second Should target awaits T6.
+Routing data is real, AQ explicitly synthetic: these measurements
+must not feed model metrics, the 50-OD impact report or dose claims in the pitch.
+Early uncapped OTP searches timed out; the final bounded search passed all pairs.
+The retained readiness placeholder now consumes/discards bounded POST bodies before
+responding, avoiding reproduced Windows socket resets without storing coordinates.
+Native TCP HTTP was also checked: health and point returned 200; a warmed plan
+returned 200 with one option and ten dose-bearing legs. A cold native plan first
+returned 503 while routing searches exceeded their timeout. Engine warm-up and
+production latency must be checked on the deployed host; no fixture substitutes
+an engine failure. The temporary local backend used for this check was stopped.

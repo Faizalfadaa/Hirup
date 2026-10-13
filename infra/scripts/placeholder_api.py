@@ -23,6 +23,32 @@ class Handler(BaseHTTPRequestHandler):
             )
 
     def do_POST(self) -> None:
+        # Drain without parsing/persisting the body before closing the connection.
+        # An unread POST body can reset localhost sockets on Windows.
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+        except ValueError:
+            length = -1
+        if not 0 <= length <= 1024 * 1024:
+            self.respond(
+                400,
+                {
+                    "type": "about:blank",
+                    "title": "Invalid request body",
+                    "status": 400,
+                    "data_quality": "approximated",
+                },
+            )
+            return
+        self.connection.settimeout(3)
+        try:
+            while length:
+                chunk = self.rfile.read(min(length, 65536))
+                if not chunk:
+                    return
+                length -= len(chunk)
+        except OSError:
+            return
         self.do_GET()
 
     def respond(self, status: int, content: dict[str, object]) -> None:

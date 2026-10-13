@@ -196,3 +196,16 @@ def test_connectors_mark_real_graph_and_aq_as_approximated() -> None:
     assert (
         router.plan(unproject(699001, 9313900), data.nodes[3], TS)[0].data_quality == "approximated"
     )
+
+
+def test_baseline_geometry_does_not_read_aq_or_use_stale_weights() -> None:
+    data, aq = graph(), FakeAQ()
+    router = ActiveRouter(data, load_active_params(), aq, trunk_penalty_factor=2)
+    points, distance, duration = router.base_path(data.nodes[0], data.nodes[3])
+    assert points[0] == data.nodes[0]
+    assert points[-1] == data.nodes[3]
+    assert distance == 200
+    assert duration == pytest.approx(200 / 1.2)
+    assert aq.calls == 0
+    with pytest.raises(NoActiveRouteError):
+        router.base_path(data.nodes[3], data.nodes[0])
