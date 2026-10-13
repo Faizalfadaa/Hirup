@@ -1,0 +1,66 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  python:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.11.21"
+          enable-cache: true
+      - name: Install
+        run: uv sync --locked
+      - name: Ruff lint
+        run: uv run ruff check .
+      - name: Ruff format
+        run: uv run ruff format --check .
+      - name: Mypy
+        run: uv run mypy services
+      - name: Pytest
+        run: uv run pytest -q -m "not integration"
+
+  flutter:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: apps/mobile
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check for Flutter app
+        id: detect
+        working-directory: .
+        run: |
+          if [ -f apps/mobile/pubspec.yaml ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "apps/mobile/pubspec.yaml not found, skipping Flutter checks"
+          fi
+      - uses: subosito/flutter-action@v2
+        if: steps.detect.outputs.present == 'true'
+        with:
+          channel: stable
+          cache: true
+      - name: Pub get
+        if: steps.detect.outputs.present == 'true'
+        run: flutter pub get
+      - name: Analyze
+        if: steps.detect.outputs.present == 'true'
+        run: flutter analyze
+      - name: Test
+        if: steps.detect.outputs.present == 'true'
+        run: flutter test
