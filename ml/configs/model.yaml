@@ -1,0 +1,77 @@
+# Model, validation and publishing settings (SPEC 11). Fixed seed for reproducibility (SPEC 8).
+seed: 20261013
+
+lightgbm: # starting point; Optuna tunes the four parameters named in SPEC 11.5
+  n_estimators: 300
+  learning_rate: 0.05
+  num_leaves: 31
+  min_data_in_leaf: 40
+  feature_fraction: 0.8
+  lambda_l2: 1.0
+  verbosity: -1
+
+optuna:
+  n_trials: 30 # SPEC 11.5: 30-50
+  space:
+    num_leaves: [7, 63]
+    min_data_in_leaf: [10, 200]
+    feature_fraction: [0.5, 1.0]
+    lambda_l2: [0.001, 10.0] # log scale
+
+quantiles: [0.1, 0.5, 0.9] # SPEC 11.3 M1-Q
+
+# SPEC 11.5: PM2.5 must not fall as trunk-road length rises, nor rise as NDVI rises.
+monotone:
+  increasing_prefixes: [road_trunk_]
+  decreasing_prefixes: [ndvi_mean_]
+
+validation:
+  min_stations: 3 # below this LOSO is meaningless and training refuses to run
+  block_m: 2000 # SPEC 11.4 spatial block CV
+  temporal_holdout_fraction: 0.2 # SPEC 11.4
+  rush_hours: [6, 9] # local time, SPEC 11.4 error analysis
+  target_coverage: 0.8 # P10-P90
+  conformal: true # widen/narrow P10-P90 by the LOSO conformity quantile
+  holdout_station_ids: [] # Phase B source hold-out: never trained on, evaluated separately
+
+promotion:
+  max_rmse_regression: 0.05 # SPEC 11.5: promote unless LOSO RMSE is >5% worse than the active model
+
+postprocess: # SPEC 11.6
+  clip: [0.0, 500.0]
+  gaussian_sigma_cells: 1.0
+
+drift: # SPEC 11.6
+  window_h: 24
+  alarm_ratio: 1.5
+  min_pairs: 12 # P2 design choice: fewer station-hours than this cannot raise the alarm
+
+inference:
+  horizon_h: 24 # FR-12
+  history_h: 6
+  max_staleness_h: 3 # a station reading older than this no longer feeds the nowcast
+  recent_slots: 3 # past nowcasts kept reachable by the API
+  cams_ratio_clip: [0.5, 2.0] # bound on the CAMS trend applied to station IDW for forecasts
+  retention_days: 7 # SPEC 10.3
+  keep_forecast_runs: 3
+
+tiles:
+  zooms: [10, 11, 12, 13, 14, 15]
+  leads: [0, 1] # hours rendered: the nowcast and the next hour
+  keep_hours: 6
+  alpha: 170
+  # Colour anchors at the ISPU PM2.5 category bounds; colours are interpolated between them.
+  ispu:
+    source: "Permen LHK No. P.14/MENLHK/SETJEN/KUM.1/7/2020 tentang ISPU, lampiran (PM2.5, 24 jam)"
+    verified_by: null
+    note: "TODO(verify): breakpoints and category colours entered from memory; P4 must check them."
+    categories: # [name, upper bound ug/m3, RGB]
+      - [baik, 15.5, [0, 176, 80]]
+      - [sedang, 55.4, [0, 112, 192]]
+      - [tidak_sehat, 150.4, [255, 192, 0]]
+      - [sangat_tidak_sehat, 250.4, [255, 0, 0]]
+      - [berbahaya, 500.0, [0, 0, 0]]
+
+insights: # FR-30, FR-31
+  min_coverage: 0.5 # a kelurahan needs at least half its area inside the pilot grid
+  window_days: 7
