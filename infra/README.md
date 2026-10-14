@@ -1054,3 +1054,27 @@ root locked Python test environment (`uv sync --locked`) and launches its own
 fixture child without access logs. `ci-down` is also safe to rerun manually with
 the same `HIRUP_CI_PROJECT`. Full GitHub cold-build and cache-hit validation must
 be recorded after the workflow is published and manually dispatched.
+
+## Production VM package (T7.3)
+
+The portable Ubuntu 24.04/x86-64 deployment, pinned API/Caddy/Nginx images,
+production Compose, P2 hourly hook, monitor, and release/rollback procedures are
+documented in [the VM runbook](deploy/RUNBOOK.md). The target remains 4 vCPU,
+16 GB RAM and OTP heap 8g; the 4g override is isolated local/CI testing only.
+The production image needs pinned native libexpat1 for rasterio, uses the existing
+uv lock without dev packages, and runs nonroot with a read-only filesystem.
+
+Build locally with `make -f infra/Makefile deploy-image
+DEPLOY_API_IMAGE=hirup-api:local-t7-3` and `deploy-test-image
+DEPLOY_API_IMAGE=hirup-api-test:local-t7-3`. Use `deploy-local-test` only with a
+unique `HIRUP_CI_PROJECT` and an already healthy `ci-up` routing project. It tests
+production degraded/503 honesty without P2 inputs, trusted local Caddy TLS,
+route 429/Retry-After despite spoofed IP headers, omitted query logs, seven HTTP
+contract operations and 30 cold-cache golden cases. It removes its own proxy/API
+project and certificate volumes; run `ci-down` in a shell trap/finally block to
+clean the routing project. Preview tags and fixture targets are not production
+releases. Reports/CA certificate remain under ignored `data/deploy-validation/`.
+
+Real VM/DNS/ACME renewal, SSH/firewall exposure, reboot persistence, P2 timer
+execution, real-AQ conformance and production latency still require verification
+after choosing a server. No cloud resource is provisioned by these Make targets.
