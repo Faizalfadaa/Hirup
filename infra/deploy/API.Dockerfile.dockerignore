@@ -1,0 +1,14 @@
+**
+!pyproject.toml
+!uv.lock
+!README.md
+!services/
+!services/**
+!contracts/
+!contracts/**
+!tests/
+!tests/**
+**/__pycache__/
+**/*.pyc
+**/AGENTS.md
+**/CLAUDE.md

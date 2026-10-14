@@ -1,0 +1,11 @@
+[Unit]
+Description=Hirup Docker ingress firewall
+After=docker.service
+Requires=docker.service
+PartOf=docker.service
+[Service]
+Type=oneshot
+ExecStart=/bin/bash /opt/hirup/current/infra/deploy/firewall.sh
+RemainAfterExit=yes
+[Install]
+WantedBy=docker.service

@@ -1,0 +1,16 @@
+[Unit]
+Description=Run the configured P2 hourly publication job
+ConditionPathExists=/etc/hirup/pipeline-command.json
+[Service]
+Type=oneshot
+User=hirup
+Group=hirup
+WorkingDirectory=/opt/hirup/current
+EnvironmentFile=-/etc/hirup/pipeline.env
+ExecStart=/usr/bin/python3 /opt/hirup/current/infra/deploy/ops.py pipeline
+TimeoutStartSec=56min
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/lib/hirup/data

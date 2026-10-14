@@ -50,7 +50,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 "HIRUP_DEMO_SEED": "20261014",
                 "HIRUP_DEMO_REFERENCE_PM25": "40",
                 "HIRUP_TRUNK_PENALTY": "2",
-                "HIRUP_DATA_DIR": str(ROOT / "data"),
+                "HIRUP_DATA_DIR": os.environ.get("HIRUP_DATA_DIR", str(ROOT / "data")),
                 "OTP_URL": os.environ.get("OTP_URL", "http://127.0.0.1:18080/otp/gtfs/v1"),
                 "OSRM_CAR_URL": os.environ.get("OSRM_CAR_URL", "http://127.0.0.1:5000"),
                 "OSRM_MOTO_URL": os.environ.get("OSRM_MOTO_URL", "http://127.0.0.1:5001"),

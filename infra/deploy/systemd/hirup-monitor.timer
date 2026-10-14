@@ -1,0 +1,8 @@
+[Unit]
+Description=Check API uptime every minute
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=1min
+Unit=hirup-monitor.service
+[Install]
+WantedBy=timers.target
