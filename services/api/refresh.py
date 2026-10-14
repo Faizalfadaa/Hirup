@@ -37,6 +37,13 @@ def _refresh(
     reference_path: Path | None,
     history_path: Path | None = None,
 ) -> None:
+    if runtime.kelurahan is not None and runtime.kelurahan.path is not None:
+        try:
+            runtime.kelurahan.reload()
+        except (ValueError, OSError):
+            logging.getLogger(__name__).warning(
+                "Regional aggregate refresh unavailable; retaining prior valid input"
+            )
     provider = runtime.aq.provider
     if fallback_path is not None:
         raw = json.loads(fallback_path.read_text())
@@ -105,6 +112,8 @@ async def hourly(
     paths = manifests + tuple(
         path for path in (fallback_path, reference_path, history_path) if path is not None
     )
+    if runtime.kelurahan is not None and runtime.kelurahan.path is not None:
+        paths += (runtime.kelurahan.path,)
     previous = (hour_key(datetime.now(UTC)), await asyncio.to_thread(signature, paths))
     while True:
         # Poll publication metadata, not pixels. P2 can publish after the hour.

@@ -27,6 +27,7 @@ from services.exposure.daily_summary import DailySummaryService
 from services.exposure.engine import Mode, Quantiles
 from services.exposure.forecast import ForecastService
 from services.exposure.geometry import BoundingBox, Point, hour_key
+from services.exposure.kelurahan import KelurahanService
 from services.exposure.params import ExposureParams, load_params
 from services.routing.active_graph import load_graph
 from services.routing.active_params import DEFAULT_PATH, load_active_params
@@ -68,6 +69,17 @@ class Runtime:
     advice_cache: PlanCache | None = None
     forecast: ForecastService | None = None
     daily_summary: DailySummaryService | None = None
+    kelurahan: KelurahanService | None = None
+
+    def configure_kelurahan(self, path: Path | None = None) -> None:
+        self.kelurahan = KelurahanService(path)
+        if path is not None:
+            try:
+                self.kelurahan.reload()
+            except (ValueError, OSError):
+                logging.getLogger(__name__).warning(
+                    "Regional aggregate input unavailable; insights require complete coverage"
+                )
 
     def configure_daily_summary(self, historical: HistoricalAQProvider | None = None) -> None:
         if self.params is not None:
@@ -248,6 +260,8 @@ class Runtime:
         runtime.configure_advice(demo=demo, historical=historical)
         runtime.configure_forecast(historical=historical)
         runtime.configure_daily_summary(historical=historical)
+        kelurahan_path = settings.get("HIRUP_KELURAHAN_SUMMARIES")
+        runtime.configure_kelurahan(Path(kelurahan_path) if kelurahan_path else None)
         if demo:
             runtime.demo_reference = float(settings["HIRUP_DEMO_REFERENCE_PM25"])
         elif settings.get("HIRUP_CITY_MEDIANS"):
