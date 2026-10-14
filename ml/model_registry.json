@@ -1,0 +1,50 @@
+[
+  {
+    "model_version": "lgbm-2026w42",
+    "trained_at": "2026-10-14T13:26:07.854035+00:00",
+    "data_window": {
+      "start": "2022-09-30T12:00:00+00:00",
+      "end": "2026-10-14T12:00:00+00:00"
+    },
+    "n_stations": 15,
+    "n_rows": 51435,
+    "n_features": 54,
+    "metrics": {
+      "loso_rmse": 21.285648910448327,
+      "loso_mae": 15.33123514861051,
+      "loso_r2": 0.38332512771105576,
+      "loso_bias": 6.443266369075064,
+      "idw_loso_rmse": 26.65679179899123,
+      "cams_rmse": 37.99043187831399,
+      "rmse_improvement_vs_idw": 0.20149247250174196,
+      "coverage_p10_p90": 0.7907261592300963,
+      "coverage_p10_p90_raw": 0.5859823077670847,
+      "temporal_holdout_rmse": 19.44920971342478,
+      "block_cv_rmse": 21.44424763388032
+    },
+    "params": {
+      "n_estimators": 300,
+      "learning_rate": 0.05,
+      "num_leaves": 20,
+      "min_data_in_leaf": 145,
+      "feature_fraction": 0.8097646923722039,
+      "lambda_l2": 0.11998720394689613,
+      "verbosity": -1
+    },
+    "top_features": [
+      "idw_pm25",
+      "road_minor_100m",
+      "wc_frac_water_300m",
+      "cams_pm25",
+      "idw_pm25_lag1",
+      "n_stations",
+      "blh",
+      "wind_u",
+      "precip_6h",
+      "idw_pm25_lag2"
+    ],
+    "path": "ml/models/lgbm-2026w42",
+    "is_active": true,
+    "promotion": "first model that beats IDW"
+  }
+]
