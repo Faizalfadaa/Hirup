@@ -868,3 +868,102 @@ and p95 9,288.8 ms. These are local real-router/seeded-synthetic-AQ regressions,
 not production or impact measurements. Although this golden sample is below
 3 seconds, previous runs exceeded it: consistent cold Should performance and
 production P2/deployed validation remain open.
+
+### T7.1: bounded live HTTP contract checks
+
+The `contract-http` target runs [Schemathesis 4.31.0](https://pypi.org/project/schemathesis/4.31.0/)
+against a running localhost FastAPI server and the frozen `contracts/openapi.yaml`.
+The runner compares `/openapi.json` with the frozen document before sending cases.
+It covers all four Must operations plus implemented Should operations for advice,
+forecast and daily summary. Kelurahan insights is explicitly excluded until its
+separate local commit is published/merged; greenspaces remains Could. The report
+lists these exclusions instead of claiming whole-API coverage.
+
+Checks cover undocumented status codes, response media types, response header
+values, response schemas, server errors and acceptance of generated invalid input.
+503 is permitted only where that operation documents it, with the correct Problem
+Details media type/body. Other 5xx responses remain failures. Valid input outside
+the pilot can legitimately produce the documented 404, and unavailable AQ/routing
+can produce a conforming 503. Conformance alone does not prove route availability;
+the independent golden OD regression remains required.
+
+Each operation gets a guided case, unchanged schema examples, and seeded positive
+and negative fuzzing. The default is at most 20 generated examples per mode and
+300 seconds for the whole run, with a 30-second request timeout. Health has no
+request inputs, so negative generation is not applicable and its positive
+strategy has one unique case. Hypothesis shrinking/database reuse is disabled;
+the configured seed and date are recorded for repeatable generation. Upstream
+router timing/availability can still vary. The supervising process enforces the
+wall-clock budget and fails incomplete runs rather than reporting a partial pass.
+
+Only plain localhost HTTP targets are accepted. Proxy/environment authentication
+is disabled for the client, redirects are not followed, and the test server
+disables access logs. Reports contain operation templates, phase completion,
+status counts and failure class names. They contain no request/response bodies,
+precise coordinates, full URLs, curl reproductions or exception messages. Worker
+stdout/stderr is captured and discarded; raw VCR/HAR/crash reports and persistent
+Hypothesis example storage are not enabled. Reports belong under ignored `data/`.
+
+For full successful-response coverage, use the explicit test-only server below.
+It uses actual FastAPI handlers and real Docker OTP/OSRM, a seeded synthetic route
+AQ provider, and tiny synthetic COG fixtures for forecast/daily summary. Those
+fixtures cover one test point and a fixed 14 October 2026 day; other in-pilot
+points can still return 503. All fixture data is labelled synthetic. The normal
+production startup has no switch to enable these forecast/daily fixtures.
+This is contract/demo evidence, never model, impact or production-AQ validation.
+Raster fixtures are opened/closed on a dedicated owner thread and their temporary
+files are cleaned on shutdown, while request sampling remains off the event loop.
+
+With the existing routing graphs and healthy Docker stack, run in Git Bash:
+
+```bash
+uv sync --locked
+unset PROJ_LIB PROJ_DATA  # avoid a conflicting PostgreSQL PROJ installation
+uv run uvicorn tests.contract.demo_backend:app --host 127.0.0.1 --port 8002 --no-access-log
+```
+
+In a second terminal:
+
+```bash
+make -f infra/Makefile contract-http CONTRACT_ARGS="--base-url http://127.0.0.1:8002 --date 2026-10-14 --fixture-aq --seed 20261014 --max-examples 20 --budget-s 300 --output data/contracts/http-conformance.json"
+```
+
+`--fixture-aq` additionally requires all seven guided cases to return 200, and
+forecast/daily successful responses to retain their synthetic label. Against a
+normal local backend, omit that flag: declared 503 is checked for conformance,
+not treated as successful availability. Stop the temporary test server with
+Ctrl+C before measuring the separate cold-cache golden regression:
+
+```bash
+make -f infra/Makefile golden-od GOLDEN_ARGS="--date 2026-10-14 --demo-min-pm25 10 --demo-max-pm25 80 --reference-pm25 40 --trunk-penalty 2 --cold-cache --profile-stages --output data/benchmarks/t7-golden.json"
+uv run pytest -q tests/contract/test_runner.py
+```
+
+The dev-only dependency adds 11 locked transitive packages, without changing any
+existing dependency versions. No production dependency, contract, service handler,
+workflow or deployment file is modified in this part. Docker CI and deployment
+are subsequent T7 checkpoints. Real P2 data, sustained/deployed performance and
+the pending insights integration remain outside this local contract validation.
+
+Final local validation passes Ruff lint/format (110 files), strict mypy (58
+source files), lock consistency and 394 non-integration tests, including both
+live OSRM profiles. The 28 added checker tests detect corrupt status/media/header/
+schema responses, retain proper 503 validation, reject remote targets, fail schema
+mismatch/timeouts, redact output, and verify raster-resource shutdown. Three
+opt-in integrations are deselected; the direct golden runner exercises Docker.
+Existing rasterio/NumPy deprecation warnings and unverified exposure-parameter
+warnings remain visible.
+
+The initial HTTP run passed 247 cases but primarily exercised error paths. The
+final stronger run passed 254 requests across all seven operations with zero
+violations, including guided 200 responses for plan, advice, point, PNG tile,
+forecast, daily summary and health. The forecast/daily fixtures explicitly retain
+synthetic quality. A first fixture shutdown exposed a cross-thread GDAL environment
+error; the dedicated owner-thread lifecycle plus regression test fixes it, and
+the final real-server startup/shutdown completed cleanly.
+
+After stopping that test server, cold-cache golden OD passes 30/30 with plan p50
+492.5 ms/p95 2,289.0 ms and AQ-point p95 4.20 ms (zero hits, 33 misses including
+warm-ups). These real-router/seeded-synthetic-AQ regressions are not production P2
+validation or proof of sustained 3-second performance. This branch starts at main
+887e57e; the separate, unpushed kelurahan commit/tests remain on the T6 branch.

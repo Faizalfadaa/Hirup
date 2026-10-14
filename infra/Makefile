@@ -4,7 +4,7 @@ SHELL := bash
 
 .PHONY: infra-help data-routing graphs up down smoke infra-config infra-check infra-logs logs
 .PHONY: active-graph active-benchmark
-.PHONY: backend-api golden-od
+.PHONY: backend-api golden-od contract-http
 BACKEND_HOST_PORT ?= 8002
 
 infra-help:
@@ -19,6 +19,7 @@ infra-help:
 	@echo "active-benchmark  Run latency benchmark with explicit synthetic AQ arguments"
 	@echo "backend-api   Run the T5 backend locally on :8002 without access logs"
 	@echo "golden-od     Run the 30-OD HTTP-to-dose checks with explicit demo arguments"
+	@echo "contract-http  Check live localhost HTTP against the frozen API contract"
 
 data-routing:
 	bash "infra/scripts/fetch_osm.sh"
@@ -62,3 +63,6 @@ backend-api: ## Run the backend locally on :8002 without access logs
 
 golden-od: ## Check 30 OD requests with explicit synthetic AQ arguments
 	uv run python tests/integration/golden_runner.py $(GOLDEN_ARGS)
+
+contract-http: ## Check live HTTP status, media types, headers and schemas
+	uv run python -m tests.contract.runner $(CONTRACT_ARGS)
