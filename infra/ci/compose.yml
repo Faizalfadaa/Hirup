@@ -1,0 +1,6 @@
+# CI-only override; local and production Compose retain their 8g default.
+services:
+  otp:
+    environment:
+      JAVA_TOOL_OPTIONS: -Xmx4g
+    mem_limit: 5g

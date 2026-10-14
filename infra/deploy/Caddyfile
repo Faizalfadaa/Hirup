@@ -1,0 +1,15 @@
+{
+	admin off
+	# Reverse-proxy error events can include query strings; keep them out of logs.
+	log default {
+		output discard
+	}
+}
+{$HIRUP_DOMAIN} {
+	reverse_proxy gateway:8080 {
+		# Overwrite untrusted client headers; the gateway trusts only this network.
+		header_up X-Hirup-Client-IP {remote_host}
+		header_up -X-Forwarded-For
+		header_up -X-Real-IP
+	}
+}

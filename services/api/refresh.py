@@ -3,8 +3,10 @@
 import asyncio
 import json
 import logging
+from concurrent.futures import Executor
 from contextlib import suppress
 from datetime import UTC, datetime
+from functools import partial
 from pathlib import Path
 
 from services.api.runtime import Runtime
@@ -101,6 +103,8 @@ async def hourly(
     fallback_path: Path | None,
     reference_path: Path | None,
     history_path: Path | None = None,
+    *,
+    owner: Executor | None = None,
 ) -> None:
     paths = manifests + tuple(
         path for path in (fallback_path, reference_path, history_path) if path is not None
@@ -113,10 +117,9 @@ async def hourly(
         current = (hour_key(now), await asyncio.to_thread(signature, paths))
         if current == previous:
             continue
-        pending = asyncio.create_task(
-            asyncio.to_thread(
-                refresh, runtime, now, manifests, fallback_path, reference_path, history_path
-            )
+        pending = asyncio.get_running_loop().run_in_executor(
+            owner,
+            partial(refresh, runtime, now, manifests, fallback_path, reference_path, history_path),
         )
         try:
             await asyncio.shield(pending)

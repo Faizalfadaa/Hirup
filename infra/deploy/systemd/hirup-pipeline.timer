@@ -1,0 +1,8 @@
+[Unit]
+Description=Schedule the P2 job hourly
+[Timer]
+OnCalendar=*-*-* *:00:00 Asia/Jakarta
+Persistent=false
+Unit=hirup-pipeline.service
+[Install]
+WantedBy=timers.target

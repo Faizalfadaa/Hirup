@@ -2,12 +2,30 @@
 set -euo pipefail
 source "$(dirname -- "$0")/common.sh"
 started=$SECONDS
+heap="${HIRUP_OTP_BUILD_HEAP:-8g}"
+ci_project="${HIRUP_CI_PROJECT:-}"
+build_options=()
+if [[ -n "$ci_project" ]]; then
+    [[ "$ci_project" =~ ^hirup-ci-[a-z0-9-]+$ ]] || {
+        printf 'Invalid isolated CI project name.\n' >&2; exit 1;
+    }
+    build_options=(--name "$ci_project-build" --label "hirup.ci.project=$ci_project")
+fi
+[[ "$heap" == 8g || ( "$heap" == 4g && -n "$ci_project" ) ]] || {
+    printf 'OTP heap must be 8g, or 4g for an isolated CI project.\n' >&2; exit 1;
+}
 
 ensure_tools
 run_python infra/scripts/routing_data.py stage
 touch "$REPO_ROOT/data/otp/.build-incomplete"
 # Stop only this project's runtime before building to free memory.
-compose stop otp osrm-car osrm-moto
+if [[ -n "$ci_project" ]]; then
+    docker compose --project-name "$ci_project" --project-directory "$INFRA_HOST" \
+        --env-file "$INFRA_HOST/images.env" -f "$INFRA_HOST/docker-compose.yml" \
+        stop otp osrm-car osrm-moto
+else
+    compose stop otp osrm-car osrm-moto
+fi
 docker pull "$OSRM_IMAGE"
 for profile in car motorcycle; do
     profile_started=$SECONDS
@@ -21,7 +39,7 @@ for profile in car motorcycle; do
         else
             args+=(/data/pilot.osrm)
         fi
-        docker run --rm \
+        docker run --rm "${build_options[@]}" \
             --mount "type=bind,source=$REPO_HOST/data/osrm/$profile,target=/data" \
             --mount "type=bind,source=$INFRA_HOST/osrm,target=/profiles,readonly" \
             "$OSRM_IMAGE" "${args[@]}"
@@ -30,7 +48,7 @@ for profile in car motorcycle; do
 done
 otp_started=$SECONDS
 docker pull "$OTP_IMAGE"
-docker run --rm --env JAVA_TOOL_OPTIONS=-Xmx8g --env TZ=Asia/Jakarta \
+docker run --rm "${build_options[@]}" --env "JAVA_TOOL_OPTIONS=-Xmx$heap" --env TZ=Asia/Jakarta \
     --mount "type=bind,source=$REPO_HOST/data/otp,target=/var/opentripplanner" \
     "$OTP_IMAGE" --build --save
 rm -- "$REPO_ROOT/data/otp/.build-incomplete"

@@ -1,0 +1,12 @@
+[Unit]
+Description=Report public API status and AQ data age
+[Service]
+Type=oneshot
+User=hirup
+EnvironmentFile=/etc/hirup/monitor.env
+ExecStart=/usr/bin/python3 /opt/hirup/current/infra/deploy/ops.py monitor
+TimeoutStartSec=20
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes

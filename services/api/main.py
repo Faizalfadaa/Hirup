@@ -3,8 +3,10 @@ import json
 import logging
 import os
 from collections.abc import AsyncIterator
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager, suppress
 from datetime import datetime
+from functools import partial
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -38,18 +40,33 @@ def create_app(runtime: Runtime | None = None) -> FastAPI:
         if runtime is not None:
             yield
             return
-        async with httpx.AsyncClient(trust_env=False) as http:
+        with ThreadPoolExecutor(max_workers=1, thread_name_prefix="hirup-aq-owner") as owner:
+            async with (
+                httpx.AsyncClient(trust_env=False) as http,
+                configured_runtime(http, owner) as configured,
+            ):
+                app.state.runtime = configured
+                yield
+
+    @asynccontextmanager
+    async def configured_runtime(
+        http: httpx.AsyncClient, owner: ThreadPoolExecutor
+    ) -> AsyncIterator[Runtime]:
+        loop = asyncio.get_running_loop()
+        configured = Runtime.unavailable()
+        try:
             try:
-                configured = await asyncio.to_thread(Runtime.from_env, http)
-                await asyncio.to_thread(
-                    configured.prepare_hour, datetime.now(ZoneInfo("Asia/Jakarta"))
+                configured = await loop.run_in_executor(owner, Runtime.from_env, http)
+                await loop.run_in_executor(
+                    owner, configured.prepare_hour, datetime.now(ZoneInfo("Asia/Jakarta"))
                 )
             except (ValueError, OSError, KeyError):
                 logging.getLogger(__name__).warning(
                     "Routing/AQ startup inputs unavailable; service degraded"
                 )
+                if configured.cog is not None:
+                    await loop.run_in_executor(owner, configured.cog.close)
                 configured = Runtime.unavailable()
-            app.state.runtime = configured
             try:
                 manifests = tuple(
                     Path(name) for name in json.loads(os.getenv("HIRUP_AQ_MANIFESTS") or "[]")
@@ -64,16 +81,17 @@ def create_app(runtime: Runtime | None = None) -> FastAPI:
                 Path(os.environ["HIRUP_AQ_HISTORY"]) if os.getenv("HIRUP_AQ_HISTORY") else None
             )
             worker = asyncio.create_task(
-                hourly(configured, manifests, fallback, references, history)
+                hourly(configured, manifests, fallback, references, history, owner=owner)
             )
             try:
-                yield
+                yield configured
             finally:
                 worker.cancel()
                 with suppress(asyncio.CancelledError):
                     await worker
-                if configured.cog is not None:
-                    configured.cog.close()
+        finally:
+            if configured.cog is not None:
+                await loop.run_in_executor(owner, partial(configured.cog.close))
 
     app = FastAPI(
         title="Hirup API",
