@@ -967,3 +967,90 @@ After stopping that test server, cold-cache golden OD passes 30/30 with plan p50
 warm-ups). These real-router/seeded-synthetic-AQ regressions are not production P2
 validation or proof of sustained 3-second performance. This branch starts at main
 887e57e; the separate, unpushed kelurahan commit/tests remain on the T6 branch.
+# Manual Docker regression workflow (T7.2)
+
+`.github/workflows/routing-golden.yml` runs only through `workflow_dispatch`.
+After it is merged to the default branch, open **Actions → routing golden
+(manual) → Run workflow**. Select the branch and a lowercase `dataset_version`,
+for example `2026-10-14-v1`. No push or PR automatically downloads routing data
+or starts this job. Running it consumes the repository's Actions allowance.
+GitHub requires the dispatch workflow to exist on the default branch:
+[manual workflow documentation](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/manually-run-a-workflow).
+
+This job uses `ubuntu-24.04`. The standard private-repository runner has
+2 CPUs, 8 GB RAM and 14 GB SSD according to
+[GitHub's runner specification](https://docs.github.com/en/actions/reference/runners/github-hosted-runners).
+The approved CI-only OTP heap is **4g**, both when building and serving the
+graph. `infra/ci/compose.yml` caps the runtime container at 5 GiB to leave
+headroom for OSRM and the Python test runtime. Normal local/production Compose
+and graph builds retain the **8g** default. A 4g build override is rejected
+unless `HIRUP_CI_PROJECT` has a `hirup-ci-` prefix. Preflight requires at least
+7 GiB host/Docker RAM and 9 GiB free workspace disk before downloads; a smaller
+runner fails. Those are policy floors, not a guarantee that every future
+dataset fits. OOM, unhealthy engines, or failing tests fail the job.
+
+The graph cache key combines the explicit dataset version with hashes of the
+locked Python dependencies, pinned images, graph builders, exposure/grid
+helpers, pilot/parameter contracts, OTP configuration, OSRM profiles and
+available manual GTFS inputs. Only an exact key is restored. Each graph file
+must match its stored size/SHA-256, the artifact inventory must be complete,
+and the manifest must match the version/configuration/images and source
+provenance. Corrupt or incompatible caches fail instead of silently rebuilding
+or accepting another version. Change `dataset_version` to request new inputs;
+delete a corrupt cache in GitHub's cache UI or choose a new version.
+
+On a miss, the existing targets download Java OSM and mdb-1909 GTFS, clip to the
+pilot, build OSRM/OTP sequentially, then build the active graph. The manifest
+records retrieval/build time, source URLs and actual download hashes. Upstream
+`latest` URLs are mutable: the same version is stable while its immutable
+GitHub cache exists, but rebuilding after eviction can fetch different bytes.
+Recorded hashes expose that change; this is not an archival snapshot service.
+The raw Java download, temporary active OSM, OTP diagnostic maps, AQ/model
+artefacts and secrets are excluded from the cache. Cold downloads are roughly
+2–4 GB including images and OSM; a warm run restores only prepared graphs and
+their staged feeds/configuration. No production P2 input is required here.
+
+The job starts only OTP/car/motorcycle in its unique `hirup-ci-<run>-<attempt>`
+project on loopback ports **18081/5100/5101**. Before HTTP testing, three
+sequential OTP queries initialize the JVM/transfer caches; each has a 30-second
+limit and must include a real transit leg. This initialization is excluded from
+latency evidence and does not change production client timeouts. It then starts the actual FastAPI
+handlers on **8003** with test-only seeded synthetic AQ, checks four Must and
+three implemented Should endpoints over HTTP, stops that fixture server, and
+runs all **10 public golden OD × 3 slots** with a fresh route cache per case.
+The fixed fixture/regression date is **2026-10-14 WIB**. One JVM warm-up per
+slot is excluded from latency measurements. Plan p95 must be **≤5000 ms** and
+AQ point p95 **≤500 ms**; the ≤3000 ms Should target is reported but is not
+this workflow's pass threshold. Missing options, schema violations, unexpected
+5xx, incomplete fuzz phases and wall-clock overruns fail the job.
+
+Reports in `data/ci/reports/` contain operation templates, status/failure counts,
+public pair IDs, response hashes, stage timings and graph-source provenance.
+They do not contain response geometry, exact OD coordinates, raw fuzz bodies,
+access logs or credentials. Only these JSON reports are uploaded, retained for
+7 days even after a test failure. These checks use real Docker routing and
+**synthetic AQ**; they are regression/latency evidence, not model evaluation,
+production AQ validation or the 50-OD impact report. Insights is still outside
+the selected contract set pending its separate publication; greenspaces is Could.
+The final `always()` cleanup stops only this CI Compose project and its labelled
+graph-build child, without global Docker pruning or stopping `hirup-routing`.
+
+To verify against existing local graphs without downloading or rebuilding them,
+use Git Bash from the repository root (the ports above must be free):
+
+```bash
+export HIRUP_CI_PROJECT=hirup-ci-local-review
+uv run python infra/ci/graphs.py preflight
+make -f infra/Makefile ci-config
+trap 'make -f infra/Makefile ci-down' EXIT
+make -f infra/Makefile ci-up
+make -f infra/Makefile ci-test
+```
+
+This validates serving at 4g and the checks/cleanup; it does not verify a fresh
+4g graph build or the hosted runner's memory/performance. Local graphs built
+at 8g must not be presented as a newly built CI cache. `ci-test` requires the
+root locked Python test environment (`uv sync --locked`) and launches its own
+fixture child without access logs. `ci-down` is also safe to rerun manually with
+the same `HIRUP_CI_PROJECT`. Full GitHub cold-build and cache-hit validation must
+be recorded after the workflow is published and manually dispatched.

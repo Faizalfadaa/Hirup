@@ -1,6 +1,7 @@
 """Local contract-test server: real routers plus explicitly synthetic AQ fixtures."""
 
 import asyncio
+import os
 from collections.abc import AsyncIterator
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
@@ -50,9 +51,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 "HIRUP_DEMO_REFERENCE_PM25": "40",
                 "HIRUP_TRUNK_PENALTY": "2",
                 "HIRUP_DATA_DIR": str(ROOT / "data"),
-                "OTP_URL": "http://127.0.0.1:18080/otp/gtfs/v1",
-                "OSRM_CAR_URL": "http://127.0.0.1:5000",
-                "OSRM_MOTO_URL": "http://127.0.0.1:5001",
+                "OTP_URL": os.environ.get("OTP_URL", "http://127.0.0.1:18080/otp/gtfs/v1"),
+                "OSRM_CAR_URL": os.environ.get("OSRM_CAR_URL", "http://127.0.0.1:5000"),
+                "OSRM_MOTO_URL": os.environ.get("OSRM_MOTO_URL", "http://127.0.0.1:5001"),
             },
         )
         await asyncio.to_thread(runtime.prepare_hour, NOW)

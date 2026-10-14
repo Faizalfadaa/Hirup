@@ -1,0 +1,93 @@
+name: routing golden (manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      dataset_version:
+        description: Graph snapshot version; change to fetch new OSM/GTFS
+        default: "2026-10-14-v1"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: routing-golden-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  routing:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      HIRUP_CI_PROJECT: hirup-ci-${{ github.run_id }}-${{ github.run_attempt }}
+      HIRUP_OTP_BUILD_HEAP: 4g
+      DATASET_VERSION: ${{ inputs.dataset_version }}
+      TZ: Asia/Jakarta
+      UV_PYTHON: "3.12"
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Check RAM and disk before downloads
+        run: python3 infra/ci/graphs.py preflight
+      - name: Compute versioned build key
+        id: graph-key
+        run: echo "key=$(python3 infra/ci/graphs.py key --dataset-version "$DATASET_VERSION")" >> "$GITHUB_OUTPUT"
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
+        with:
+          version: "0.11.21"
+          enable-cache: true
+      - name: Install locked Python environment
+        run: uv sync --locked
+      - name: Restore exact graph snapshot
+        id: graphs
+        uses: actions/cache/restore@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          key: ${{ steps.graph-key.outputs.key }}
+          path: |
+            data/ci/graphs.json
+            data/osm/pilot.osm.pbf
+            data/otp/*.json
+            data/otp/*.gtfs.zip
+            data/otp/graph.obj
+            data/otp/pilot.osm.pbf
+            data/osrm
+            data/graphs/active.json.gz
+      - name: Download and build on cache miss
+        if: steps.graphs.outputs.cache-hit != 'true'
+        run: |
+          make -f infra/Makefile data-routing graphs active-graph
+          uv run python infra/ci/graphs.py write --dataset-version "$DATASET_VERSION"
+      - name: Verify provenance and every graph checksum
+        run: uv run python infra/ci/graphs.py verify --dataset-version "$DATASET_VERSION" --report data/ci/reports/provenance.json
+      - name: Save validated graph snapshot
+        if: steps.graphs.outputs.cache-hit != 'true'
+        uses: actions/cache/save@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          key: ${{ steps.graph-key.outputs.key }}
+          path: |
+            data/ci/graphs.json
+            data/osm/pilot.osm.pbf
+            data/otp/*.json
+            data/otp/*.gtfs.zip
+            data/otp/graph.obj
+            data/otp/pilot.osm.pbf
+            data/osrm
+            data/graphs/active.json.gz
+      - name: Validate and wait for isolated routing stack
+        run: |
+          make -f infra/Makefile ci-config
+          make -f infra/Makefile ci-up
+      - name: Seven HTTP endpoints and 30 cold golden OD cases
+        run: make -f infra/Makefile ci-test
+      - name: Upload redacted regression reports
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: routing-regression-${{ github.run_id }}-${{ github.run_attempt }}
+          path: data/ci/reports/*.json
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Clean only this CI project
+        if: always()
+        run: make -f infra/Makefile ci-down

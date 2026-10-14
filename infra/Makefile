@@ -5,6 +5,7 @@ SHELL := bash
 .PHONY: infra-help data-routing graphs up down smoke infra-config infra-check infra-logs logs
 .PHONY: active-graph active-benchmark
 .PHONY: backend-api golden-od contract-http
+.PHONY: ci-config ci-up ci-test ci-down
 BACKEND_HOST_PORT ?= 8002
 
 infra-help:
@@ -20,6 +21,7 @@ infra-help:
 	@echo "backend-api   Run the T5 backend locally on :8002 without access logs"
 	@echo "golden-od     Run the 30-OD HTTP-to-dose checks with explicit demo arguments"
 	@echo "contract-http  Check live localhost HTTP against the frozen API contract"
+	@echo "ci-config / ci-up / ci-test / ci-down  Validate, start, test and clean an isolated CI stack"
 
 data-routing:
 	bash "infra/scripts/fetch_osm.sh"
@@ -41,11 +43,11 @@ infra-config:
 	bash "infra/scripts/stack.sh" config
 
 infra-check:
-	uv run --project infra ruff check infra/scripts tests/infra
-	uv run --project infra ruff format --check infra/scripts tests/infra
-	uv run --project infra mypy --config-file infra/pyproject.toml infra/scripts tests/infra
+	uv run --project infra ruff check infra/scripts infra/ci tests/infra
+	uv run --project infra ruff format --check infra/scripts infra/ci tests/infra
+	uv run --project infra mypy --config-file infra/pyproject.toml infra/scripts infra/ci tests/infra
 	uv run --project infra python -m pytest -c infra/pyproject.toml -q tests/infra
-	@for script in infra/scripts/*.sh; do bash -n "$$script"; done
+	@for script in infra/scripts/*.sh infra/ci/*.sh; do bash -n "$$script"; done
 
 infra-logs:
 	bash "infra/scripts/stack.sh" logs
@@ -66,3 +68,15 @@ golden-od: ## Check 30 OD requests with explicit synthetic AQ arguments
 
 contract-http: ## Check live HTTP status, media types, headers and schemas
 	uv run python -m tests.contract.runner $(CONTRACT_ARGS)
+
+ci-config:
+	bash infra/ci/stack.sh config
+
+ci-up:
+	bash infra/ci/stack.sh up
+
+ci-test:
+	uv run python -m infra.ci.check
+
+ci-down:
+	bash infra/ci/stack.sh down

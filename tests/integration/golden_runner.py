@@ -29,6 +29,9 @@ async def run(
     output: Path | None = None,
     cold_cache: bool = False,
     profile_stages: bool = False,
+    otp_url: str = "http://127.0.0.1:18080/otp/gtfs/v1",
+    osrm_car_url: str = "http://127.0.0.1:5000",
+    osrm_moto_url: str = "http://127.0.0.1:5001",
 ) -> dict[str, Any]:
     golden = json.loads((ROOT / "contracts/golden_od.json").read_text())
     env = {
@@ -37,6 +40,9 @@ async def run(
         "HIRUP_DEMO_MAX_PM25": str(maximum),
         "HIRUP_DEMO_REFERENCE_PM25": str(reference),
         "HIRUP_TRUNK_PENALTY": str(trunk),
+        "OTP_URL": otp_url,
+        "OSRM_CAR_URL": osrm_car_url,
+        "OSRM_MOTO_URL": osrm_moto_url,
     }
     records: list[dict[str, Any]] = []
     async with httpx.AsyncClient(trust_env=False) as upstream:
@@ -139,6 +145,9 @@ def main() -> None:
     parser.add_argument("--output", type=Path)
     parser.add_argument("--cold-cache", action="store_true")
     parser.add_argument("--profile-stages", action="store_true")
+    parser.add_argument("--otp-url", default="http://127.0.0.1:18080/otp/gtfs/v1")
+    parser.add_argument("--osrm-car-url", default="http://127.0.0.1:5000")
+    parser.add_argument("--osrm-moto-url", default="http://127.0.0.1:5001")
     args = parser.parse_args()
     report = asyncio.run(
         run(
@@ -150,6 +159,9 @@ def main() -> None:
             output=args.output,
             cold_cache=args.cold_cache,
             profile_stages=args.profile_stages,
+            otp_url=args.otp_url,
+            osrm_car_url=args.osrm_car_url,
+            osrm_moto_url=args.osrm_moto_url,
         )
     )
     print(json.dumps({key: value for key, value in report.items() if key != "records"}, indent=2))
