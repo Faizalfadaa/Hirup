@@ -1173,3 +1173,14 @@ It uses real routing engines and explicitly seeded synthetic AQ. This is a
 regression sample, not production P2 evidence, and does not establish sustained
 3-second Should performance. Real aggregate/boundary validation and FR-31
 methodology remain pending.
+
+### Develop: P1/P2 workspace integration
+
+The combined branch uses an atomic `HIRUP_AQ_PUBLICATION` index, immutable COG
+runs, sourced historical fallback and complete daily kelurahan aggregates.
+See [integration, worker and real-data handoff](deploy/INTEGRATION.md) for the
+current setup and limitations. API, P2 worker and fixture-only image targets
+are separate. HTTP contract checks now include insights, for eight operations.
+`uv run python -m tests.integration.p2_runner` checks all golden OD against
+seeded P2 LightGBM/COG outputs and real Docker routing engines. It is explicitly
+synthetic integration evidence, not a model-accuracy or impact result.

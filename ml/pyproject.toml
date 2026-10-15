@@ -1,0 +1,27 @@
+[project]
+name = "hirup-ml"
+version = "0.1.0"
+description = "Hirup ML lane: PM2.5 nowcast on the 100 m pilot grid, hourly COG rasters"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "hirup-pipelines",
+    "lightgbm>=4.5",
+    "scikit-learn>=1.5",
+    "optuna>=4.0",
+    "matplotlib>=3.9",
+    "pillow>=10.4",
+    "jsonschema>=4.23",
+]
+
+[project.scripts]
+hirup-ml = "hirup_ml.cli:main"
+
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/hirup_ml"]
+
+[tool.uv.sources]
+hirup-pipelines = { workspace = true }

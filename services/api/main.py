@@ -80,8 +80,21 @@ def create_app(runtime: Runtime | None = None) -> FastAPI:
             history = (
                 Path(os.environ["HIRUP_AQ_HISTORY"]) if os.getenv("HIRUP_AQ_HISTORY") else None
             )
+            publication = (
+                Path(os.environ["HIRUP_AQ_PUBLICATION"])
+                if os.getenv("HIRUP_AQ_PUBLICATION")
+                else None
+            )
             worker = asyncio.create_task(
-                hourly(configured, manifests, fallback, references, history, owner=owner)
+                hourly(
+                    configured,
+                    manifests,
+                    fallback,
+                    references,
+                    history,
+                    owner=owner,
+                    publication_path=publication,
+                )
             )
             try:
                 yield configured

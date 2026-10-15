@@ -105,7 +105,7 @@ def test_failure_report_never_includes_values_from_request_or_response(
 def test_exact_scope_contains_all_must_and_only_implemented_should() -> None:
     document = yaml.safe_load(CONTRACT.read_text())
     selected, excluded = operations(document)
-    assert len(selected) == 7
+    assert len(selected) == 8
     assert set(selected) == {
         "POST /v1/routes/plan",
         "GET /v1/aq/point",
@@ -114,9 +114,9 @@ def test_exact_scope_contains_all_must_and_only_implemented_should() -> None:
         "GET /v1/routes/departure-advice",
         "GET /v1/aq/forecast",
         "GET /v1/aq/daily-summary",
+        "GET /v1/insights/kelurahan",
     }
     assert {item["operation"] for item in excluded} == {
-        "GET /v1/insights/kelurahan",
         "GET /v1/greenspaces/nearby",
     }
     # A future Must operation cannot silently disappear from the selected scope.

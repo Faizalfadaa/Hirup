@@ -39,15 +39,19 @@ services:
     environment:
       HIRUP_DEMO: "false"
       HIRUP_DATA_DIR: /data
+      HIRUP_AQ_PUBLICATION: ${HIRUP_AQ_PUBLICATION:-/data/aq_publication.json}
       HIRUP_AQ_MANIFESTS: ${HIRUP_AQ_MANIFESTS:-[]}
       HIRUP_AQ_INPUTS: ${HIRUP_AQ_INPUTS:-}
       HIRUP_AQ_HISTORY: ${HIRUP_AQ_HISTORY:-}
       HIRUP_CITY_MEDIANS: ${HIRUP_CITY_MEDIANS:-}
+      HIRUP_KELURAHAN_SUMMARIES: ${HIRUP_KELURAHAN_SUMMARIES:-}
       HIRUP_TRUNK_PENALTY: ${HIRUP_TRUNK_PENALTY:?provide agreed routing factor}
       OTP_URL: http://otp:8080/otp/gtfs/v1
       OSRM_CAR_URL: http://osrm-car:5000
       OSRM_MOTO_URL: http://osrm-moto:5000
     volumes: ["${HIRUP_DATA_HOST:?set data path}:/data:ro"]
+    ulimits:
+      nofile: {soft: 4096, hard: 4096}
     read_only: true
     tmpfs: ["/tmp:size=64m"]
     cap_drop: [ALL]

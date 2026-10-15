@@ -7,6 +7,7 @@ User=hirup
 Group=hirup
 WorkingDirectory=/opt/hirup/current
 EnvironmentFile=-/etc/hirup/pipeline.env
+Environment=PYTHONDONTWRITEBYTECODE=1 MPLCONFIGDIR=/tmp/hirup-matplotlib
 ExecStart=/usr/bin/python3 /opt/hirup/current/infra/deploy/ops.py pipeline
 TimeoutStartSec=56min
 NoNewPrivileges=yes

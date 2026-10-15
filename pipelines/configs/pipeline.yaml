@@ -1,0 +1,138 @@
+# Pipeline constants (SPEC 8 "Reprodusibilitas": every constant lives in config with a source).
+# Scientific values carry `source` and `verified_by`; `verified_by: null` means no human has
+# checked the number against the original source yet (SPEC 17.3 rule 4).
+
+grid:
+  crs: EPSG:32748
+  resolution_m: 100 # SPEC 6.1
+
+stations:
+  buffer_km: 10 # SPEC 10.1, H0 validation: pilot area +/- 10 km
+
+openaq:
+  base_url: https://api.openaq.org/v3
+  min_interval_s: 1.1 # SPEC 10.1: 60 requests/minute, 2,000/hour
+  page_limit: 1000
+  parameter: pm25
+
+waqi:
+  base_url: https://api.waqi.info
+  min_interval_s: 0.2
+  hour_offset_h: 0 # shift applied to the station timestamp; see README "Open questions"
+  # WAQI publishes the PM2.5 sub-index on the US EPA AQI scale, not a concentration.
+  # The table below inverts it. aqi_low..aqi_high maps linearly to conc_low..conc_high.
+  aqi_breakpoints:
+    source: "US EPA AQI PM2.5 24-hour breakpoints (2012 revision), as described at aqicn.org/faq/2013-09-09/revised-pm25-aqi-breakpoints"
+    verified_by: null
+    note: "TODO(verify): confirm WAQI still uses the 2012 table and has not moved to the May 2024 EPA revision."
+    table:
+      - [0, 50, 0.0, 12.0]
+      - [51, 100, 12.1, 35.4]
+      - [101, 150, 35.5, 55.4]
+      - [151, 200, 55.5, 150.4]
+      - [201, 300, 150.5, 250.4]
+      - [301, 400, 250.5, 350.4]
+      - [401, 500, 350.5, 500.4]
+
+open_meteo:
+  weather_url: https://api.open-meteo.com/v1/forecast
+  weather_history_url: https://historical-forecast-api.open-meteo.com/v1/forecast
+  air_quality_url: https://air-quality-api.open-meteo.com/v1/air-quality
+  cams_domain: cams_global
+  # Query lattice over the pilot bbox. Open-Meteo snaps each point to its model grid
+  # (9-25 km weather, about 45 km CAMS), so a denser lattice adds no information.
+  lattice: {n_lat: 3, n_lon: 2}
+  weather_vars: # names confirmed against the live API on 2026-10-13
+    - temperature_2m
+    - relative_humidity_2m
+    - precipitation
+    - wind_speed_10m
+    - wind_direction_10m
+    - boundary_layer_height
+  forecast_days: 2
+  max_past_days: 92
+
+osm:
+  # Same file infra/scripts/fetch_osm.sh downloads; parsed once into a local index.
+  pbf_url: https://download.geofabrik.de/asia/indonesia/java-latest.osm.pbf
+  endpoints: # Overpass: admin boundaries, and roads/buildings outside the index
+
+    - https://maps.mail.ru/osm/tools/overpass/api/interpreter
+    - https://overpass-api.de/api/interpreter
+    - https://overpass.private.coffee/api/interpreter
+    - https://overpass.kumi.systems/api/interpreter
+  tile_deg: 0.025 # Overpass queries are split into tiles this size
+  road_classes: # OSM highway value -> feature class
+    trunk: [motorway, motorway_link, trunk, trunk_link]
+    primary: [primary, primary_link]
+    secondary: [secondary, secondary_link, tertiary, tertiary_link]
+    minor: [residential, unclassified, living_street, service]
+
+rasters:
+  worldcover_url: "https://esa-worldcover.s3.eu-central-1.amazonaws.com/v200/2021/map/ESA_WorldCover_10m_2021_v200_{tile}_Map.tif"
+  ndvi_url: "https://esa-worldcover-s2.s3.eu-central-1.amazonaws.com/ndvi/2021/{lat}/ESA_WorldCover_10m_2021_v200_{tile}_NDVI.tif"
+  worldpop_url: "https://data.worldpop.org/GIS/Population/Global_2000_2020_Constrained/2020/BSGM/IDN/idn_ppp_2020_constrained.tif"
+
+gtfs:
+  transjakarta_url: https://files.mobilitydatabase.org/mdb-1909/latest.zip
+  brt_route_desc: BRT # routes.txt route_desc value that marks BRT corridors
+  weekday_service_hours: [6, 22] # trips/hour is averaged over this local-time window
+
+features:
+  road_buffers_m: [50, 100, 300, 500] # SPEC 11.2
+  distance_cap_m: 500 # distance-to-road features are capped so grid and station patches agree
+  brt_distance_cap_m: 3000
+  margin_cells: 6 # 600 m working margin, covers the largest (500 m) buffer
+
+qc: # SPEC 10.2
+  range_min: 0.0
+  range_max: 1000.0
+  flatline_hours: 6
+  spike_sigma: 5.0
+  spike_window_h: 24
+  spike_neighbour_km: 3.0
+  spike_confirm_sigma: 2.0 # P2 design choice: a neighbour deviating this much confirms the spike
+  max_gap_h: 2
+
+calibration: # SPEC 10.2: PM_ref = a*PM_lcs + b*RH + c*PM_lcs*RH + d, per provider
+  pair_km: 1.0
+  min_pairs: 72 # P2 design choice: at least three days of paired hours before a fit is trusted
+
+dedupe: # SPEC 10.2
+  max_distance_m: 50
+  min_correlation: 0.9 # P2 design choice for "korelasi tinggi"
+  min_overlap_h: 24
+
+sample_weight: # SPEC 10.2 "bobot sampel"; values are a P2 design choice
+  reference: 1.0
+  lcs_calibrated: 0.5
+  lcs_raw: 0.25
+
+g0: # SPEC 10.1 / 18: gate G0
+  min_stations: 10
+  min_hours: 168
+
+calendar:
+  source: "SKB Tiga Menteri tentang Hari Libur Nasional dan Cuti Bersama 2026"
+  verified_by: null
+  note: "TODO(verify): dates entered from memory of the 2026 decree; a human must check them."
+  holidays:
+    - 2026-01-01
+    - 2026-01-16
+    - 2026-02-17
+    - 2026-03-19
+    - 2026-03-20
+    - 2026-03-21
+    - 2026-03-22
+    - 2026-04-03
+    - 2026-05-01
+    - 2026-05-14
+    - 2026-05-27
+    - 2026-05-31
+    - 2026-06-01
+    - 2026-06-16
+    - 2026-08-17
+    - 2026-08-25
+    - 2026-12-25
+  ramadan: # inclusive date ranges
+    - [2026-02-18, 2026-03-19]

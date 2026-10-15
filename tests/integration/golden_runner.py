@@ -4,6 +4,7 @@ import argparse
 import asyncio
 import hashlib
 import json
+from collections.abc import Awaitable, Callable
 from contextlib import ExitStack
 from datetime import date, datetime
 from pathlib import Path
@@ -32,6 +33,8 @@ async def run(
     otp_url: str = "http://127.0.0.1:18080/otp/gtfs/v1",
     osrm_car_url: str = "http://127.0.0.1:5000",
     osrm_moto_url: str = "http://127.0.0.1:5001",
+    runtime_factory: Callable[[httpx.AsyncClient, dict[str, str]], Awaitable[Runtime]]
+    | None = None,
 ) -> dict[str, Any]:
     golden = json.loads((ROOT / "contracts/golden_od.json").read_text())
     env = {
@@ -45,8 +48,13 @@ async def run(
         "OSRM_MOTO_URL": osrm_moto_url,
     }
     records: list[dict[str, Any]] = []
+    initialization: list[dict[str, Any]] = []
     async with httpx.AsyncClient(trust_env=False) as upstream:
-        runtime = await asyncio.to_thread(Runtime.from_env, upstream, env)
+        runtime = (
+            await runtime_factory(upstream, env)
+            if runtime_factory is not None
+            else await asyncio.to_thread(Runtime.from_env, upstream, env)
+        )
         profiler = StageProfiler()
         profiling = profiler.install(runtime) if profile_stages else ExitStack()
         with profiling:
@@ -72,8 +80,17 @@ async def run(
                             "include_comparison": True,
                         }
 
-                    # Warm the JVM on one public golden pair before timing this slot.
-                    await api.post("/v1/routes/plan", json=payload(golden["pairs"][0]))
+                    # Warm JVM search state, then measure cold application caches. A failed
+                    # warm-up must not silently count as engine readiness. Timed cases never retry.
+                    warm_statuses = []
+                    for _ in range(3):
+                        warm = await api.post("/v1/routes/plan", json=payload(golden["pairs"][0]))
+                        warm_statuses.append(warm.status_code)
+                        if warm.status_code == 200:
+                            break
+                    initialization.append({"slot": slot, "statuses": warm_statuses})
+                    if warm_statuses[-1] != 200:
+                        raise ValueError("Golden JVM initialization has no successful route")
                     for pair in golden["pairs"]:
                         if cold_cache:
                             runtime.invalidate_plans()
@@ -111,7 +128,14 @@ async def run(
                 point_latencies = []
                 for _ in range(30):
                     started = perf_counter()
-                    response = await api.get("/v1/aq/point", params={"lat": -6.2, "lon": 106.8})
+                    response = await api.get(
+                        "/v1/aq/point",
+                        params={
+                            "lat": -6.2,
+                            "lon": 106.8,
+                            "ts": f"{day.isoformat()}T07:30:00+07:00",
+                        },
+                    )
                     response.raise_for_status()
                     point_latencies.append((perf_counter() - started) * 1000)
             cache_stats = runtime.plan_cache.stats() if runtime.plan_cache is not None else None
@@ -123,6 +147,7 @@ async def run(
         "cold_cache": cold_cache,
         "profile_stages": profile_stages,
         "cache_stats": cache_stats,
+        "initialization": initialization,
         "golden_success": valid,
         "plan_p50_ms": float(np.median(latencies)),
         "plan_p95_ms": float(np.percentile(latencies, 95)),

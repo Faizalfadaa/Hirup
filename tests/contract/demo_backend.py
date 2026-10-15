@@ -20,6 +20,7 @@ from services.exposure.forecast import ForecastService
 from tests.test_aq_provider import BOUNDS
 from tests.test_daily_summary import daily_cogs
 from tests.test_forecast import NOW
+from tests.test_kelurahan import loaded as kelurahan_fixture
 
 
 @asynccontextmanager
@@ -59,6 +60,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         await asyncio.to_thread(runtime.prepare_hour, NOW)
         with TemporaryDirectory(prefix="hirup-aq-contract-") as folder:
             root = Path(folder)
+            runtime.kelurahan = kelurahan_fixture(root)
             async with synthetic_cog(root) as cog:
                 assert runtime.params is not None
                 runtime.forecast = ForecastService(

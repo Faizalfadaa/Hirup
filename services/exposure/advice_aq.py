@@ -114,6 +114,8 @@ class AdviceAQProvider:
                 manifest = self.cog.manifest(ts)
                 if manifest.kind != "forecast" or manifest.generated_at > now:
                     raise AQUnavailableError("No published corrected forecast for this hour")
+                if (manifest.metrics or {}).get("forecast_model_corrected") == 0:
+                    raise AQUnavailableError("Uncorrected IDW/CAMS is not an advice forecast")
                 samples = self.cog.sample(points, ts)
                 current = self.cog.manifest(ts)
                 if (

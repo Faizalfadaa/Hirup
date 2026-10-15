@@ -28,8 +28,8 @@ PostgreSQL/PostGIS remains a future stack decision, not a deploy prerequisite.
 4. Install the reviewed Git checkout at `/opt/hirup/current`. Use a merged,
    reviewed commit. Preserve credentials outside the repository.
 5. Obtain validated routing graphs, feeds and the sourced P2 publication inputs.
-   The pipeline repository currently has no runnable hourly entrypoint. Ask P2
-   for the exact command and publication paths before enabling that timer.
+   The reviewed P2 entrypoint is `hirup-ml hourly`; stage its real inputs/model
+   before enabling that timer. See [integration and handoff](INTEGRATION.md).
 
 No production success can be claimed until real AQ inputs and public TLS/VM
 checks pass. A 200 health response with `status: degraded` is not readiness.
@@ -73,6 +73,7 @@ the server, not in Git. Restrict the filled file to root (mode 0600). Values:
 - `HIRUP_DOMAIN`: bare API domain.
 - `HIRUP_API_IMAGE`: commit-tagged or digest-pinned API image for initial setup.
 - `HIRUP_DATA_HOST`: `/var/lib/hirup/data`.
+- `HIRUP_AQ_PUBLICATION`: `/data/aq_publication.json`, the preferred atomic P2 index.
 - `HIRUP_AQ_MANIFESTS`: JSON array of stable publication paths **inside** `/data`.
 - `HIRUP_AQ_INPUTS`, `HIRUP_AQ_HISTORY`, `HIRUP_CITY_MEDIANS`: sourced JSON paths
   inside `/data`, when supplied by P2. Do not invent input values.
@@ -146,7 +147,7 @@ or coordinates. It does not send email/Slack or provision an external monitoring
 account. Someone must inspect failures during the operational period; production
 restart policies and health checks keep containers running but do not fix bad data.
 
-Once P2 provides a reviewed command, place its **argv JSON array**, starting with
+After staging the reviewed P2 environment and real inputs, place its **argv JSON array**, starting with
 an absolute executable path, at `/etc/hirup/pipeline-command.json`. Place private
 tokens in `/etc/hirup/pipeline.env` (root-owned, group hirup, mode 0640). No shell
 command string is executed. Confirm the P2 environment is installed and outputs

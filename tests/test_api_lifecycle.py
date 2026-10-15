@@ -56,7 +56,12 @@ async def test_startup_reload_and_shutdown_share_owner(
         runtime.cog = CogAQProvider(tmp_path, (manifest,), bounds=BOUNDS, allow_synthetic=True)
         return runtime
 
-    async def reload_once(runtime: Runtime, *unused: object, owner: ThreadPoolExecutor) -> None:
+    async def reload_once(
+        runtime: Runtime,
+        *unused: object,
+        owner: ThreadPoolExecutor,
+        publication_path: Path | None = None,
+    ) -> None:
         assert runtime.cog is not None
         await asyncio.get_running_loop().run_in_executor(owner, runtime.cog.reload, (manifest,))
         refreshed.set()
@@ -88,7 +93,7 @@ async def test_hourly_cancellation_waits_for_pending_owner_io(
     async def poll_without_minute_delay(delay: float) -> None:
         await original_sleep(0)
 
-    def pending_io(*arguments: object) -> None:
+    def pending_io(*arguments: object, **keywords: object) -> None:
         entered.set()
         assert released.wait(5)
         finished.set()
