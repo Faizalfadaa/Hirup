@@ -210,6 +210,48 @@ def test_workflow_manual_only_exact_cache_and_unconditional_cleanup() -> None:
     assert steps[-1]["run"] == "make -f infra/Makefile ci-down"
 
 
+def test_regular_ci_checks_develop_and_all_python_packages() -> None:
+    yaml = pytest.importorskip("yaml")
+    workflow = yaml.safe_load((graphs.ROOT / ".github/workflows/ci.yml").read_text())
+    triggers = workflow.get("on", workflow.get(True))
+    assert set(triggers["push"]["branches"]) == {"main", "develop"}
+    assert set(triggers["pull_request"]["branches"]) == {"main", "develop"}
+    assert "workflow_dispatch" in triggers
+    commands = "\n".join(step.get("run", "") for step in workflow["jobs"]["python"]["steps"])
+    assert "mypy services" in commands
+    assert "pipelines/src ml/src" in commands
+    assert "infra/scripts infra/ci infra/deploy" in commands
+    assert 'pytest -q -m "not integration"' in commands
+
+
+@pytest.mark.parametrize("platform", ["Linux", "MINGW64_NT-10.0", "Darwin"])
+def test_tools_bind_mounts_use_host_identity_only_on_linux(tmp_path: Path, platform: str) -> None:
+    bash = (
+        Path("C:/Program Files/Git/bin/bash.exe")
+        if os.name == "nt"
+        else Path(shutil.which("bash") or "/missing")
+    )
+    if not bash.is_file():
+        pytest.skip("Git Bash/bash unavailable")
+    script = (
+        'uname() { printf "%s\\n" "$TEST_PLATFORM"; }; '
+        'id() { if [[ "$1" == -u ]]; then echo 1234; else echo 2345; fi; }; '
+        'docker() { printf "<%s>\\n" "$@"; }; '
+        "source infra/scripts/common.sh; run_python infra/scripts/routing_data.py bbox"
+    )
+    result = subprocess.run(
+        [str(bash), "-c", script],
+        cwd=graphs.ROOT,
+        env={**os.environ, "TEST_PLATFORM": platform},
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert ("<--user>\n<1234:2345>" in result.stdout) is (platform == "Linux")
+    assert "<--mount>" in result.stdout
+    assert "<python>" in result.stdout
+
+
 @pytest.mark.parametrize(
     ("project", "compose_failure"),
     [
