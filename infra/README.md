@@ -1,5 +1,23 @@
 # Hirup routing infrastructure
 
+Current handoff: [backend architecture/privacy](BACKEND.md),
+[parameter verification queue](PARAMETER_REVIEW.md),
+[Azure deployment preparation](deploy/AZURE.md) and
+[production runbook](deploy/RUNBOOK.md).
+
+Linux graph-build containers now use the invoking host UID/GID, including
+tools, OSM conversion, OSRM and OTP. This prevents root-owned staged directories
+from blocking host-side markers and GitHub cache handling. Windows Docker Desktop
+keeps its own permission mapping. Pre-existing root-owned Linux inputs must be
+reviewed by their administrator; these scripts do not recursively change owners
+or permissions. A fresh hosted cache-miss build and later cache hit remain
+required acceptance evidence after publication.
+
+CI engine preflight retries only transport failures (at most three attempts per
+variant). Invalid/no-transit responses fail immediately. Its redacted
+`initialization.json` records attempts and success/failure even on failure.
+Preflight is excluded from latency; timed golden requests never retry.
+
 This stack builds a pilot street graph for OTP and separate OSRM graphs for cars
 and motorcycles. It is the T2 infrastructure lane; the API container is a readiness
 placeholder until the backend is merged.
