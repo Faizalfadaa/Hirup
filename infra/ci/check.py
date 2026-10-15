@@ -26,26 +26,70 @@ ENGINES = {
 }
 
 
-def warm_transit() -> None:
+def warm_transit(report_path: Path | None = None) -> None:
     """Initialize OTP transfer/JIT caches with real, sequential transit queries."""
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-    for reluctance in (1.5, 3, 6):
-        payload = transit_payload(datetime.fromisoformat("2026-10-14T07:30:00+07:00"))
-        payload["query"] = str(payload["query"]).replace(
-            "numItineraries: 5,", f"numItineraries: 5, walkReluctance: {reluctance},"
-        )
-        request = urllib.request.Request(
-            ENGINES["OTP_URL"],
-            json.dumps(payload).encode(),
-            headers={"Content-Type": "application/json"},
-        )
-        try:
-            with opener.open(request, timeout=30) as response:
-                transit_duration(json.load(response))
-        except (OSError, ValueError, KeyError, TypeError):
-            raise RuntimeError(
-                "OTP initialization requires a successful transit query"
-            ) from None
+    attempts: list[dict[str, object]] = []
+    success = False
+    try:
+        for reluctance in (1.5, 3, 6):
+            payload = transit_payload(
+                datetime.fromisoformat("2026-10-14T07:30:00+07:00")
+            )
+            payload["query"] = str(payload["query"]).replace(
+                "numItineraries: 5,",
+                f"numItineraries: 5, walkReluctance: {reluctance},",
+            )
+            request = urllib.request.Request(
+                ENGINES["OTP_URL"],
+                json.dumps(payload).encode(),
+                headers={"Content-Type": "application/json"},
+            )
+            for attempt in range(1, 4):
+                started = time.monotonic()
+                outcome = "ok"
+                try:
+                    with opener.open(request, timeout=30) as response:
+                        transit_duration(json.load(response))
+                except urllib.error.HTTPError as error:
+                    outcome = (
+                        "transport_error" if error.code >= 500 else "invalid_transit"
+                    )
+                except OSError:
+                    outcome = "transport_error"
+                except (ValueError, KeyError, TypeError, AttributeError):
+                    outcome = "invalid_transit"
+                attempts.append(
+                    {
+                        "reluctance": reluctance,
+                        "attempt": attempt,
+                        "outcome": outcome,
+                        "elapsed_ms": (time.monotonic() - started) * 1000,
+                    }
+                )
+                if outcome == "ok":
+                    break
+                # Retry transient transport failures only during preflight. Timed
+                # golden requests are never retried; invalid/no-transit fails now.
+                if outcome == "invalid_transit" or attempt == 3:
+                    raise RuntimeError(
+                        "OTP initialization requires a successful transit query"
+                    )
+        success = True
+    finally:
+        if report_path is not None:
+            report_path.parent.mkdir(parents=True, exist_ok=True)
+            report_path.write_text(
+                json.dumps(
+                    {
+                        "purpose": "engine initialization; excluded from latency",
+                        "otp_variants": 3,
+                        "success": success,
+                        "attempts": attempts,
+                    }
+                ),
+                encoding="utf-8",
+            )
 
 
 def wait_ready(process: subprocess.Popen[bytes], timeout: float = 180) -> None:
@@ -101,17 +145,7 @@ def fixture_server() -> Iterator[None]:
 def main() -> None:
     output = ROOT / "data/ci/reports"
     output.mkdir(parents=True, exist_ok=True)
-    warm_transit()
-    (output / "initialization.json").write_text(
-        json.dumps(
-            {
-                "purpose": "engine initialization; excluded from latency",
-                "otp_variants": 3,
-                "success": True,
-            }
-        ),
-        encoding="utf-8",
-    )
+    warm_transit(output / "initialization.json")
     with fixture_server():
         subprocess.run(
             [

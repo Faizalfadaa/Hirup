@@ -1,4 +1,6 @@
 import asyncio
+import json
+from collections.abc import AsyncIterator
 from dataclasses import replace
 from datetime import datetime
 
@@ -151,3 +153,89 @@ async def test_malformed_osrm_response_degrades_to_empty() -> None:
         transport=httpx.MockTransport(lambda _: httpx.Response(200, json=[]))
     ) as http:
         assert await OsrmClient(http, "http://osrm", Mode.CAR).candidates(QUERY) == ()
+
+
+@pytest.mark.parametrize("engine", ["otp", "osrm"])
+async def test_total_request_deadline_cancels_streaming_upstream(engine: str) -> None:
+    closed = asyncio.Event()
+
+    class Trickle(httpx.AsyncByteStream):
+        async def __aiter__(self) -> AsyncIterator[bytes]:
+            # Each read makes progress, but the entire response never completes.
+            while True:
+                yield b" "
+                await asyncio.sleep(0.005)
+
+        async def aclose(self) -> None:
+            closed.set()
+
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(lambda _: httpx.Response(200, stream=Trickle()))
+    ) as http:
+        router = (
+            OtpClient(http, "http://otp", timeout_s=0.03, available_modes={"BUS"})
+            if engine == "otp"
+            else OsrmClient(http, "http://osrm", Mode.CAR, timeout_s=0.03)
+        )
+        assert await asyncio.wait_for(router.candidates(QUERY), timeout=1) == ()
+        assert closed.is_set()
+
+
+async def test_slow_otp_variant_does_not_discard_successful_variants() -> None:
+    calls, cancelled = [], []
+
+    async def respond(request: httpx.Request) -> httpx.Response:
+        reluctance = json.loads(request.content)["variables"]["reluctance"]
+        calls.append(reluctance)
+        if reluctance == 6:
+            try:
+                await asyncio.Event().wait()
+            finally:
+                cancelled.append(reluctance)
+        return httpx.Response(200, json={"data": {"plan": {"itineraries": [itinerary()]}}})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as http:
+        result = await asyncio.wait_for(
+            OtpClient(http, "http://otp", timeout_s=0.03, available_modes={"BUS"}).candidates(
+                QUERY
+            ),
+            timeout=1,
+        )
+    assert len(result) == 1
+    assert sorted(calls) == [1.5, 3, 6]
+    assert cancelled == [6]
+
+
+@pytest.mark.parametrize("engine", ["otp", "osrm"])
+async def test_caller_cancellation_propagates_to_engine(engine: str) -> None:
+    started, cancelled = asyncio.Event(), asyncio.Event()
+
+    async def respond(request: httpx.Request) -> httpx.Response:
+        started.set()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            cancelled.set()
+        raise AssertionError("Unreachable")
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as http:
+        router = (
+            OtpClient(http, "http://otp", available_modes={"BUS"})
+            if engine == "otp"
+            else OsrmClient(http, "http://osrm", Mode.CAR)
+        )
+        task = asyncio.create_task(router.candidates(QUERY))
+        await asyncio.wait_for(started.wait(), timeout=1)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        assert cancelled.is_set()
+
+
+@pytest.mark.parametrize("deadline_s", [0, -1, float("inf"), float("nan")])
+async def test_invalid_engine_deadlines_are_rejected(deadline_s: float) -> None:
+    async with httpx.AsyncClient() as http:
+        with pytest.raises(ValueError, match="timeout"):
+            OtpClient(http, "http://otp", timeout_s=deadline_s)
+        with pytest.raises(ValueError, match="timeout"):
+            OsrmClient(http, "http://osrm", Mode.CAR, timeout_s=deadline_s)

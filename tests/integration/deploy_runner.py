@@ -64,7 +64,7 @@ def main() -> None:
                 raise ValueError("Production without AQ must return 503")
         report["production_missing_aq"] = "degraded/503"
         compose("stop", "api-preview")
-        warm_transit()
+        warm_transit(output / "initialization.json")
         compose("up", "-d", "--wait", "api", "gateway", "caddy")
         ca = output / "local-ca.crt"
         for attempt in range(30):

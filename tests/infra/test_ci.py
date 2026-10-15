@@ -46,6 +46,44 @@ def test_otp_initialization_is_bounded_and_requires_transit(
         assert len(queries) == 1
 
 
+@pytest.mark.parametrize("failures", [1, 3])
+def test_initialization_transport_retries_are_bounded_and_reported(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failures: int
+) -> None:
+    calls = 0
+
+    class Opener:
+        def open(self, request: urllib.request.Request, timeout: int) -> io.BytesIO:
+            nonlocal calls
+            calls += 1
+            if calls <= failures:
+                raise TimeoutError("upstream private URL must not be logged")
+            return io.BytesIO(
+                json.dumps(
+                    {
+                        "data": {
+                            "plan": {
+                                "itineraries": [{"duration": 120, "legs": [{"transitLeg": True}]}]
+                            }
+                        }
+                    }
+                ).encode()
+            )
+
+    monkeypatch.setattr(urllib.request, "build_opener", lambda *args: Opener())
+    path = tmp_path / "initialization.json"
+    if failures == 3:
+        with pytest.raises(RuntimeError, match="successful transit"):
+            check.warm_transit(path)
+    else:
+        check.warm_transit(path)
+    report = json.loads(path.read_text())
+    assert report["success"] is (failures == 1)
+    assert len(report["attempts"]) == (4 if failures == 1 else 3)
+    assert report["attempts"][0]["outcome"] == "transport_error"
+    assert "private URL" not in path.read_text()
+
+
 @pytest.fixture
 def graph_repo(tmp_path: Path) -> Path:
     inputs = (
