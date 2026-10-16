@@ -13,6 +13,7 @@ openaq:
   base_url: https://api.openaq.org/v3
   min_interval_s: 1.1 # SPEC 10.1: 60 requests/minute, 2,000/hour
   page_limit: 1000
+  ended_after_days: 7 # team choice: last_seen older than this = station ended; newer = still query up to now
   parameter: pm25
 
 waqi:
