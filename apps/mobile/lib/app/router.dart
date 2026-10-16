@@ -19,23 +19,57 @@ final routerProvider = Provider<GoRouter>((ref) => GoRouter(
       initialLocation: '/',
       routes: [
         GoRoute(path: '/', builder: (_, __) => const _LaunchGate()),
-        GoRoute(path: '/onboarding', builder: (_, __) => const OnboardingScreen()),
+        GoRoute(
+            path: '/onboarding', builder: (_, __) => const OnboardingScreen()),
         StatefulShellRoute.indexedStack(
           builder: (_, __, shell) => AppShell(shell: shell),
           branches: [
-            StatefulShellBranch(routes: [GoRoute(path: '/home', builder: (_, __) => const HomeScreen())]),
-            StatefulShellBranch(routes: [GoRoute(path: '/history', builder: (_, __) => const HistoryScreen())]),
-            StatefulShellBranch(routes: [GoRoute(path: '/insights', builder: (_, __) => const InsightsScreen())]),
-            StatefulShellBranch(routes: [GoRoute(path: '/profile', builder: (_, __) => const ProfileScreen())]),
+            StatefulShellBranch(routes: [
+              GoRoute(path: '/home', builder: (_, __) => const HomeScreen())
+            ]),
+            StatefulShellBranch(routes: [
+              GoRoute(
+                  path: '/history', builder: (_, __) => const HistoryScreen())
+            ]),
+            StatefulShellBranch(routes: [
+              GoRoute(
+                  path: '/insights', builder: (_, __) => const InsightsScreen())
+            ]),
+            StatefulShellBranch(routes: [
+              GoRoute(
+                  path: '/profile', builder: (_, __) => const ProfileScreen())
+            ]),
           ],
         ),
-        GoRoute(parentNavigatorKey: _rootNavigatorKey, path: '/place/origin', builder: (_, __) => const PlacePickerScreen(isOrigin: true)),
-        GoRoute(parentNavigatorKey: _rootNavigatorKey, path: '/place/destination', builder: (_, __) => const PlacePickerScreen(isOrigin: false)),
-        GoRoute(parentNavigatorKey: _rootNavigatorKey, path: '/plan/mode', builder: (_, __) => const ModeScreen()),
-        GoRoute(parentNavigatorKey: _rootNavigatorKey, path: '/plan/results', builder: (_, __) => const ResultsScreen()),
-        GoRoute(parentNavigatorKey: _rootNavigatorKey, path: '/plan/detail/:id', builder: (_, state) => DetailScreen(optionId: state.pathParameters['id']!)),
-        GoRoute(parentNavigatorKey: _rootNavigatorKey, path: '/plan/departure', builder: (_, __) => const DepartureScreen()),
-        GoRoute(parentNavigatorKey: _rootNavigatorKey, path: '/trip/active', builder: (_, __) => const ActiveTripScreen()),
+        GoRoute(
+            parentNavigatorKey: _rootNavigatorKey,
+            path: '/place/origin',
+            builder: (_, __) => const PlacePickerScreen(isOrigin: true)),
+        GoRoute(
+            parentNavigatorKey: _rootNavigatorKey,
+            path: '/place/destination',
+            builder: (_, __) => const PlacePickerScreen(isOrigin: false)),
+        GoRoute(
+            parentNavigatorKey: _rootNavigatorKey,
+            path: '/plan/mode',
+            builder: (_, __) => const JourneyPreferencesScreen()),
+        GoRoute(
+            parentNavigatorKey: _rootNavigatorKey,
+            path: '/plan/results',
+            builder: (_, __) => const ResultsScreen()),
+        GoRoute(
+            parentNavigatorKey: _rootNavigatorKey,
+            path: '/plan/detail/:id',
+            builder: (_, state) =>
+                DetailScreen(optionId: state.pathParameters['id']!)),
+        GoRoute(
+            parentNavigatorKey: _rootNavigatorKey,
+            path: '/plan/departure',
+            builder: (_, __) => const DepartureScreen()),
+        GoRoute(
+            parentNavigatorKey: _rootNavigatorKey,
+            path: '/trip/active',
+            builder: (_, __) => const ActiveTripScreen()),
       ],
     ));
 

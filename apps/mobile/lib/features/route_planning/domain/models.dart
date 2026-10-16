@@ -1,4 +1,5 @@
 enum PlanMode { transit, bike, walk, all }
+
 enum Sensitivity { umum, rentan }
 
 /// The API rejects timestamps without an offset; UTC (`...Z`) is always explicit.
@@ -10,9 +11,13 @@ class PlacePoint {
   final double lat;
   final double lon;
   Map<String, dynamic> toCoordinatesJson() => {'lat': lat, 'lon': lon};
-  /// Routes are planned only inside the pilot corridor (SPEC 6.1, contracts/golden_od.json).
-  bool get insideRoutingPilot => lat >= -6.30 && lat <= -6.13 && lon >= 106.76 && lon <= 106.85;
+
+  /// Route planning is currently limited to the Jakarta pilot corridor.
+  bool get insideRoutingPilot =>
+      lat >= -6.30 && lat <= -6.13 && lon >= 106.76 && lon <= 106.85;
+
   bool samePlaceAs(PlacePoint other) => lat == other.lat && lon == other.lon;
+
   factory PlacePoint.fromJson(Map<String, dynamic> json) => PlacePoint(
         name: json['name'] as String? ?? 'Titik',
         lat: (json['lat'] as num).toDouble(),
@@ -35,19 +40,33 @@ class JourneyDraft {
     required this.departAt,
     this.mode = PlanMode.transit,
     this.sensitivity = Sensitivity.umum,
+    this.maxWalkM = 1000,
+    this.includeComparison = true,
   });
   final PlacePoint origin;
   final PlacePoint destination;
   final DateTime departAt;
   final PlanMode mode;
   final Sensitivity sensitivity;
+  final int maxWalkM;
+  final bool includeComparison;
 
-  JourneyDraft copyWith({PlacePoint? origin, PlacePoint? destination, DateTime? departAt, PlanMode? mode, Sensitivity? sensitivity}) => JourneyDraft(
+  JourneyDraft copyWith(
+          {PlacePoint? origin,
+          PlacePoint? destination,
+          DateTime? departAt,
+          PlanMode? mode,
+          Sensitivity? sensitivity,
+          int? maxWalkM,
+          bool? includeComparison}) =>
+      JourneyDraft(
         origin: origin ?? this.origin,
         destination: destination ?? this.destination,
         departAt: departAt ?? this.departAt,
         mode: mode ?? this.mode,
         sensitivity: sensitivity ?? this.sensitivity,
+        maxWalkM: maxWalkM ?? this.maxWalkM,
+        includeComparison: includeComparison ?? this.includeComparison,
       );
 
   Map<String, dynamic> toPlanJson() => {
@@ -55,13 +74,14 @@ class JourneyDraft {
         'destination': destination.toCoordinatesJson(),
         'depart_at': apiTimestamp(departAt),
         'mode': mode.name,
-        'profile': {'sensitivity': sensitivity.name, 'max_walk_m': 1000},
-        'include_comparison': true,
+        'profile': {'sensitivity': sensitivity.name, 'max_walk_m': maxWalkM},
+        'include_comparison': includeComparison,
       };
 }
 
 class DataFreshness {
-  const DataFreshness({required this.validHour, this.modelVersion, required this.confidence});
+  const DataFreshness(
+      {required this.validHour, this.modelVersion, required this.confidence});
   final DateTime validHour;
   final String? modelVersion;
   final String confidence;
@@ -73,7 +93,18 @@ class DataFreshness {
 }
 
 class TripLeg {
-  const TripLeg({required this.mode, required this.startTime, required this.endTime, required this.durationS, required this.from, required this.to, required this.meanPm25, required this.doseUg, this.routeName, this.polyline, this.segmentsPm25});
+  const TripLeg(
+      {required this.mode,
+      required this.startTime,
+      required this.endTime,
+      required this.durationS,
+      required this.from,
+      required this.to,
+      required this.meanPm25,
+      required this.doseUg,
+      this.routeName,
+      this.polyline,
+      this.segmentsPm25});
   final String mode;
   final DateTime startTime;
   final DateTime endTime;
@@ -83,9 +114,11 @@ class TripLeg {
   final double meanPm25;
   final double doseUg;
   final String? routeName;
+
   /// Encoded polyline (precision 6); null for WAIT legs.
   final String? polyline;
-  /// P50 PM2.5 per polyline segment, for colouring the route (FR-04).
+
+  /// P50 PM2.5 per polyline segment, for colouring the route.
   final List<double>? segmentsPm25;
   factory TripLeg.fromJson(Map<String, dynamic> json) {
     final route = json['route'] as Map<String, dynamic>?;
@@ -98,15 +131,32 @@ class TripLeg {
       to: PlacePoint.fromJson(json['to'] as Map<String, dynamic>),
       meanPm25: (json['mean_pm25'] as num).toDouble(),
       doseUg: (json['dose_ug'] as num).toDouble(),
-      routeName: route?['short_name'] as String? ?? route?['long_name'] as String?,
+      routeName:
+          route?['short_name'] as String? ?? route?['long_name'] as String?,
       polyline: json['polyline'] as String?,
-      segmentsPm25: (json['segments_pm25'] as List<dynamic>?)?.map((value) => (value as num).toDouble()).toList(),
+      segmentsPm25: (json['segments_pm25'] as List<dynamic>?)
+          ?.map((value) => (value as num).toDouble())
+          .toList(),
     );
   }
 }
 
 class RouteOption {
-  const RouteOption({required this.id, required this.labels, required this.departAt, required this.arriveAt, required this.durationS, required this.transfers, required this.distanceM, required this.doseUg, required this.doseP10, required this.doseP90, required this.deltaDosePct, required this.deltaDurationS, required this.dataQuality, required this.legs});
+  const RouteOption(
+      {required this.id,
+      required this.labels,
+      required this.departAt,
+      required this.arriveAt,
+      required this.durationS,
+      required this.transfers,
+      required this.distanceM,
+      required this.doseUg,
+      required this.doseP10,
+      required this.doseP90,
+      required this.deltaDosePct,
+      required this.deltaDurationS,
+      required this.dataQuality,
+      required this.legs});
   final String id;
   final List<String> labels;
   final DateTime departAt;
@@ -135,19 +185,28 @@ class RouteOption {
         deltaDosePct: (json['delta_vs_fastest_pct'] as num).toDouble(),
         deltaDurationS: json['delta_duration_vs_fastest_s'] as int,
         dataQuality: json['data_quality'] as String,
-        legs: (json['legs'] as List).map((e) => TripLeg.fromJson(e as Map<String, dynamic>)).toList(),
+        legs: (json['legs'] as List)
+            .map((e) => TripLeg.fromJson(e as Map<String, dynamic>))
+            .toList(),
       );
 }
 
 class VehicleComparison {
-  const VehicleComparison({required this.durationS, required this.doseUg, required this.doseP10, required this.doseP90, this.costIdr, this.co2Kg});
+  const VehicleComparison(
+      {required this.durationS,
+      required this.doseUg,
+      required this.doseP10,
+      required this.doseP90,
+      this.costIdr,
+      this.co2Kg});
   final int durationS;
   final double doseUg;
   final double doseP10;
   final double doseP90;
   final int? costIdr;
   final double? co2Kg;
-  factory VehicleComparison.fromJson(Map<String, dynamic> json) => VehicleComparison(
+  factory VehicleComparison.fromJson(Map<String, dynamic> json) =>
+      VehicleComparison(
         durationS: json['duration_s'] as int,
         doseUg: (json['dose_ug'] as num).toDouble(),
         doseP10: (json['dose_ug_p10'] as num).toDouble(),
@@ -158,7 +217,14 @@ class VehicleComparison {
 }
 
 class PlanResult {
-  const PlanResult({required this.requestId, required this.dataQuality, required this.freshness, required this.options, this.motorcycle, this.car, required this.disclaimer});
+  const PlanResult(
+      {required this.requestId,
+      required this.dataQuality,
+      required this.freshness,
+      required this.options,
+      this.motorcycle,
+      this.car,
+      required this.disclaimer});
   final String requestId;
   final String dataQuality;
   final DataFreshness freshness;
@@ -172,17 +238,32 @@ class PlanResult {
     return PlanResult(
       requestId: json['request_id'] as String,
       dataQuality: json['data_quality'] as String,
-      freshness: DataFreshness.fromJson(json['data_freshness'] as Map<String, dynamic>),
-      options: (json['options'] as List).map((e) => RouteOption.fromJson(e as Map<String, dynamic>)).toList(),
-      motorcycle: comparison?['motorcycle'] == null ? null : VehicleComparison.fromJson(comparison!['motorcycle'] as Map<String, dynamic>),
-      car: comparison?['car'] == null ? null : VehicleComparison.fromJson(comparison!['car'] as Map<String, dynamic>),
+      freshness: DataFreshness.fromJson(
+          json['data_freshness'] as Map<String, dynamic>),
+      options: (json['options'] as List)
+          .map((e) => RouteOption.fromJson(e as Map<String, dynamic>))
+          .toList(),
+      motorcycle: comparison?['motorcycle'] == null
+          ? null
+          : VehicleComparison.fromJson(
+              comparison!['motorcycle'] as Map<String, dynamic>),
+      car: comparison?['car'] == null
+          ? null
+          : VehicleComparison.fromJson(
+              comparison!['car'] as Map<String, dynamic>),
       disclaimer: json['disclaimer'] as String,
     );
   }
 }
 
 class AirPoint {
-  const AirPoint({required this.validHour, required this.p10, required this.p50, required this.p90, required this.quality, this.category});
+  const AirPoint(
+      {required this.validHour,
+      required this.p10,
+      required this.p50,
+      required this.p90,
+      required this.quality,
+      this.category});
   final DateTime validHour;
   final double p10;
   final double p50;
@@ -193,8 +274,11 @@ class AirPoint {
     final pm = json['pm25'] as Map<String, dynamic>;
     return AirPoint(
       validHour: DateTime.parse(json['valid_hour'] as String),
-      p10: (pm['p10'] as num).toDouble(), p50: (pm['p50'] as num).toDouble(), p90: (pm['p90'] as num).toDouble(),
-      quality: json['data_quality'] as String, category: json['ispu_category'] as String?,
+      p10: (pm['p10'] as num).toDouble(),
+      p50: (pm['p50'] as num).toDouble(),
+      p90: (pm['p90'] as num).toDouble(),
+      quality: json['data_quality'] as String,
+      category: json['ispu_category'] as String?,
     );
   }
 }
@@ -203,11 +287,19 @@ class ApiProblem implements Exception {
   const ApiProblem(this.message, {this.requestId});
   final String message;
   final String? requestId;
-  @override String toString() => message;
+  @override
+  String toString() => message;
 }
 
 class DepartureSlot {
-  const DepartureSlot({required this.departAt, required this.durationS, required this.doseUg, required this.doseP10, required this.doseP90, required this.deltaDosePct, required this.deltaDurationS});
+  const DepartureSlot(
+      {required this.departAt,
+      required this.durationS,
+      required this.doseUg,
+      required this.doseP10,
+      required this.doseP90,
+      required this.deltaDosePct,
+      required this.deltaDurationS});
   final DateTime departAt;
   final int durationS;
   final double doseUg;
@@ -216,29 +308,50 @@ class DepartureSlot {
   final double deltaDosePct;
   final int deltaDurationS;
   factory DepartureSlot.fromJson(Map<String, dynamic> json) => DepartureSlot(
-    departAt: DateTime.parse(json['depart_at'] as String), durationS: json['duration_s'] as int,
-    doseUg: (json['dose_ug'] as num).toDouble(), doseP10: (json['dose_ug_p10'] as num).toDouble(), doseP90: (json['dose_ug_p90'] as num).toDouble(),
-    deltaDosePct: (json['delta_dose_pct'] as num).toDouble(), deltaDurationS: json['delta_duration_s'] as int,
-  );
+        departAt: DateTime.parse(json['depart_at'] as String),
+        durationS: json['duration_s'] as int,
+        doseUg: (json['dose_ug'] as num).toDouble(),
+        doseP10: (json['dose_ug_p10'] as num).toDouble(),
+        doseP90: (json['dose_ug_p90'] as num).toDouble(),
+        deltaDosePct: (json['delta_dose_pct'] as num).toDouble(),
+        deltaDurationS: json['delta_duration_s'] as int,
+      );
 }
 
 class DepartureAdvice {
-  const DepartureAdvice({required this.slots, this.bestSlot, required this.dataQuality});
+  const DepartureAdvice(
+      {required this.slots, this.bestSlot, required this.dataQuality});
   final List<DepartureSlot> slots;
   final DateTime? bestSlot;
   final String dataQuality;
-  factory DepartureAdvice.fromJson(Map<String, dynamic> json) => DepartureAdvice(
-    slots: (json['slots'] as List).map((e) => DepartureSlot.fromJson(e as Map<String, dynamic>)).toList(),
-    bestSlot: json['best_slot'] == null ? null : DateTime.parse(json['best_slot'] as String), dataQuality: json['data_quality'] as String,
-  );
+  factory DepartureAdvice.fromJson(Map<String, dynamic> json) =>
+      DepartureAdvice(
+        slots: (json['slots'] as List)
+            .map((e) => DepartureSlot.fromJson(e as Map<String, dynamic>))
+            .toList(),
+        bestSlot: json['best_slot'] == null
+            ? null
+            : DateTime.parse(json['best_slot'] as String),
+        dataQuality: json['data_quality'] as String,
+      );
 }
 
 class CityInsight {
-  const CityInsight({required this.name, required this.kecamatan, required this.meanPm25, this.inequalityIndex, this.priorityRank});
+  const CityInsight(
+      {required this.name,
+      required this.kecamatan,
+      required this.meanPm25,
+      this.inequalityIndex,
+      this.priorityRank});
   final String name;
   final String kecamatan;
   final double meanPm25;
   final double? inequalityIndex;
   final int? priorityRank;
-  factory CityInsight.fromJson(Map<String, dynamic> json) => CityInsight(name: json['name'] as String, kecamatan: json['kecamatan'] as String, meanPm25: (json['mean_pm25'] as num).toDouble(), inequalityIndex: (json['inequality_index'] as num?)?.toDouble(), priorityRank: json['priority_rank'] as int?);
+  factory CityInsight.fromJson(Map<String, dynamic> json) => CityInsight(
+      name: json['name'] as String,
+      kecamatan: json['kecamatan'] as String,
+      meanPm25: (json['mean_pm25'] as num).toDouble(),
+      inequalityIndex: (json['inequality_index'] as num?)?.toDouble(),
+      priorityRank: json['priority_rank'] as int?);
 }
