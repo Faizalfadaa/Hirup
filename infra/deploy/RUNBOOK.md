@@ -140,7 +140,9 @@ The script fetches that bundle, refuses a commit that is not on `main` or a dirt
 checkout, builds `hirup-api:<sha>` with `deploy-image` and calls `ops.py release`.
 Release health gating and automatic rollback are unchanged, so a deployment fails
 (red in Actions, previous image restored) until the real AQ inputs pass readiness.
-Only the API image is updated; graphs, P2 data and `/etc/hirup/*.env` stay on the VM.
+Only the API image and, when installed, the P2 `.venv` of the checkout (re-synced
+with `uv sync --locked --no-dev --package hirup-ml`, Python under `/opt/hirup/python`)
+are updated; graphs, P2 data and `/etc/hirup/*.env` stay on the VM.
 A manual re-deploy of the current `main` is available as *Run workflow* on `deploy`.
 
 One-time setup on the VM (root):

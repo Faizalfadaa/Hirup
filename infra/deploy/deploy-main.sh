@@ -31,6 +31,11 @@ git merge-base --is-ancestor "$sha" origin/main || {
     printf 'Commit %s is not on main; refusing.\n' "$sha" >&2; exit 1;
 }
 git checkout --quiet --detach "$sha"
+# The hourly P2 job runs from this checkout's .venv; keep it in step with uv.lock.
+if [[ -x .venv/bin/hirup-ml ]]; then
+    UV_PYTHON_INSTALL_DIR=/opt/hirup/python UV_CACHE_DIR=/var/cache/hirup-uv \
+        uv sync --quiet --locked --no-dev --package hirup-ml
+fi
 printf 'Building %s\n' "$image"
 make --no-print-directory -f infra/Makefile deploy-image DEPLOY_API_IMAGE="$image" >/dev/null
 
