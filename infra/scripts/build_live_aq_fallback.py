@@ -8,7 +8,6 @@ from pathlib import Path
 
 import duckdb
 
-
 ROOT = Path(__file__).resolve().parents[2]
 DATA = ROOT / "data"
 
@@ -34,7 +33,9 @@ def main() -> None:
             """
             WITH latest AS (
                 SELECT station_id, ts, value_cal,
-                       row_number() OVER (PARTITION BY station_id ORDER BY ts DESC) AS rank
+                       row_number() OVER (
+                           PARTITION BY station_id ORDER BY ts DESC
+                       ) AS rank
                 FROM read_parquet(?)
                 WHERE qc_flag = 'ok' AND value_cal IS NOT NULL
             )

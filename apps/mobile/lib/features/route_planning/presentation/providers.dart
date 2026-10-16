@@ -10,8 +10,9 @@ final demoModeProvider = StateProvider<bool>((ref) => false);
 final demoScenarioProvider = StateProvider<int>((ref) => 0);
 
 final repositoryProvider = Provider<HirupRepository>((ref) {
-  if (ref.watch(demoModeProvider))
+  if (ref.watch(demoModeProvider)) {
     return DemoHirupRepository(scenario: ref.watch(demoScenarioProvider));
+  }
   return ApiHirupRepository();
 });
 
