@@ -262,3 +262,53 @@ def test_openaq_ingest_resumes_in_chunks_and_skips_a_failing_sensor(monkeypatch)
     first_call = next(c for c in calls if c[0] == "openaq:1")
     assert first_call[1] >= (last - pd.Timedelta(hours=3)).to_pydatetime()
     assert first_call[2] <= datetime.now(UTC)
+
+
+def test_openaq_ingest_ignores_a_stale_last_seen_on_active_stations(monkeypatch):
+    now = datetime.now(UTC)
+    stations = pd.DataFrame(
+        {
+            "station_id": ["openaq:1", "openaq:2"],
+            "name": "s",
+            "type": "reference",
+            "source": "openaq",
+            "provider": "gov",
+            "lat": -6.2,
+            "lon": 106.8,
+            "active": True,
+            "sensor_id": [10, 20],
+            "first_seen": None,
+            # Stamped at discovery two days ago vs. a station that ended last year.
+            "last_seen": [now - pd.Timedelta(days=2), now - pd.Timedelta(days=365)],
+        }
+    )
+    store.write_parquet(stations, paths.raw_stations())
+    ends = {}
+
+    def fake_fetch(http, station_id, sensor_id, start, end):
+        ends[station_id] = end
+        return pd.DataFrame(columns=["station_id", "ts", "value_raw", "source"])
+
+    monkeypatch.setenv("OPENAQ_API_KEY", "k")
+    monkeypatch.setattr(openaq, "fetch_hours", fake_fetch)
+    monkeypatch.setattr(schemas, "validate", lambda frame, schema: frame)
+    tasks.ingest_openaq(days=3)
+    assert ends["openaq:1"] >= now
+    assert "openaq:2" not in ends  # ended before the window: nothing to ask for
+
+
+def test_atomic_writes_retry_a_briefly_locked_target(monkeypatch, tmp_path):
+    real_replace, calls = store.os.replace, []
+
+    def locked_twice(src, dst):
+        calls.append(dst)
+        if len(calls) < 3:
+            raise PermissionError("locked by another process")
+        real_replace(src, dst)
+
+    monkeypatch.setattr(store.os, "replace", locked_twice)
+    monkeypatch.setattr(store.time, "sleep", lambda s: None)
+    store.write_json({"ok": True}, tmp_path / "x.json")
+    assert store.read_json(tmp_path / "x.json") == {"ok": True}
+    assert len(calls) == 3
+    assert not list(tmp_path.glob(".x.json.*.tmp"))

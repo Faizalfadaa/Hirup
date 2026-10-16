@@ -21,7 +21,7 @@ from scipy import ndimage
 from hirup_ml.config import MANIFEST_SCHEMA, load_config
 from hirup_pipelines import store
 from hirup_pipelines.grid import CRS, Grid, to_utm
-from hirup_pipelines.settings import TIMEZONE, data_dir, pilot_bbox
+from hirup_pipelines.settings import TIMEZONE, data_dir, map_bbox
 
 FloatArray = npt.NDArray[np.float64]
 QUANTILES = ("p10", "p50", "p90")
@@ -115,7 +115,7 @@ def write_set(
         path = run_dir / f"pm25_{key}_{name}.tif"
         write_cog(path, raster.arrays[name], grid)
         files[name] = path.relative_to(data_dir()).as_posix()
-    box = pilot_bbox()
+    box = map_bbox()
     p50 = raster.arrays["p50"]
     manifest = {
         "manifest_version": "1.0",
@@ -152,34 +152,25 @@ def write_set(
 # --- map tiles -------------------------------------------------------------------------------
 
 
-def colour_lut() -> tuple[FloatArray, npt.NDArray[np.float64]]:
-    """Concentration anchors and RGB colours from the configured ISPU categories."""
-    categories = load_config()["tiles"]["ispu"]["categories"]
-    anchors = np.array([0.0] + [float(upper) for _, upper, _ in categories[:-1]])
-    colours = np.array([rgb for _, _, rgb in categories], dtype=float)
-    return anchors, colours
-
-
-LUT_STEP = 0.25  # ug/m3 per colour-table entry
-
-
 @cache
-def _colour_table() -> npt.NDArray[np.uint8]:
-    anchors, colours = colour_lut()
-    levels = np.arange(0.0, anchors[-1] + LUT_STEP, LUT_STEP)
-    return np.stack(
-        [np.interp(levels, anchors, colours[:, channel]) for channel in range(3)], axis=-1
-    ).astype(np.uint8)
+def colour_steps() -> tuple[FloatArray, npt.NDArray[np.uint8]]:
+    """Upper bounds and RGB colours of the configured ISPU categories."""
+    categories = load_config()["tiles"]["ispu"]["categories"]
+    uppers = np.array([float(upper) for _, upper, _ in categories])
+    colours = np.array([rgb for _, _, rgb in categories], dtype=np.uint8)
+    return uppers, colours
 
 
 def colourise(values: FloatArray) -> npt.NDArray[np.uint8]:
-    table = _colour_table()
-    index = np.clip(np.rint(np.asarray(values) / LUT_STEP), 0, len(table) - 1).astype(np.intp)
-    return table[index]
+    """One flat colour per category, as in the regulation: a value takes the colour of the
+    first category whose upper bound it does not exceed (15.5 is still "baik")."""
+    uppers, colours = colour_steps()
+    index = np.searchsorted(uppers, np.asarray(values), side="left")
+    return colours[np.clip(index, 0, len(colours) - 1)]
 
 
 def tile_range(z: int) -> tuple[range, range]:
-    box = pilot_bbox()
+    box = map_bbox()
     n = 2**z
 
     def x_of(lon: float) -> int:
@@ -229,7 +220,7 @@ def _pixel_positions(grid: Grid, n: int, x: int, y: int) -> tuple[FloatArray, Fl
 
 def tile_indices(grid: Grid) -> list[TileIndex]:
     """Tile geometry depends only on the grid, so it is computed once per run."""
-    box = pilot_bbox()
+    box = map_bbox()
     out = []
     for z in load_config()["tiles"]["zooms"]:
         n = 2**z

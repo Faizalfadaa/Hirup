@@ -24,10 +24,18 @@ import rasterio
 from hirup_ml import raster
 from hirup_ml.config import FALLBACK_VERSION, insights_dir, load_config, rasters_dir
 from hirup_pipelines import paths, store
-from hirup_pipelines.grid import CRS, pilot_grid
+from hirup_pipelines.grid import CRS, map_grid
 from hirup_pipelines.settings import TIMEZONE
 
 KEYS = ["kelurahan_id", "ts"]
+
+
+UNKNOWN_KECAMATAN = "Tidak tercatat di OSM"
+
+
+def kecamatan_label(value: Any) -> str:
+    """Some OSM kelurahan (mostly outside DKI) have no kecamatan polygon around them."""
+    return value if isinstance(value, str) and value.strip() else UNKNOWN_KECAMATAN
 
 
 def hourly_path() -> Any:
@@ -137,7 +145,7 @@ def write_daily(run_dir: Path, generated_at: datetime) -> Path | None:
                 {
                     "kelurahan_id": str(row.kelurahan_id),
                     "name": row.name,
-                    "kecamatan": row.kecamatan,
+                    "kecamatan": kecamatan_label(row.kecamatan),
                 }
                 for row in static.itertuples(index=False)
             ],
@@ -164,7 +172,7 @@ def kelurahan_static() -> pd.DataFrame:
     boundaries = gpd.read_file(paths.boundaries() / latest["path"]).to_crs(CRS)
     boundaries["area_km2"] = boundaries.geometry.area / 1e6
     out = boundaries.drop(columns="geometry").merge(per, on="kelurahan_id", how="inner")
-    out["coverage"] = np.clip(out["cells"] * (pilot_grid().res ** 2 / 1e6) / out["area_km2"], 0, 1)
+    out["coverage"] = np.clip(out["cells"] * (map_grid().res ** 2 / 1e6) / out["area_km2"], 0, 1)
     out.attrs["boundaries_version"] = latest["boundaries_version"]
     return out
 
@@ -208,7 +216,7 @@ def summarise(start: date, end: date, hours: list[int] | None = None) -> dict[st
             {
                 "kelurahan_id": row.kelurahan_id,
                 "name": row.name,
-                "kecamatan": row.kecamatan if isinstance(row.kecamatan, str) else "",
+                "kecamatan": kecamatan_label(row.kecamatan),
                 "mean_pm25": round(float(row.mean_pm25), 2),
                 "inequality_index": round(float(row.inequality_index), 4),
                 "priority_rank": int(row.priority_rank),
@@ -258,4 +266,4 @@ def archive_daily(day: date) -> None:
         with rasterio.open(path) as src:
             stack.append(src.read(1).astype(float))
     if len(stack) == 24:
-        raster.write_cog(target, np.mean(stack, axis=0), pilot_grid())
+        raster.write_cog(target, np.mean(stack, axis=0), map_grid())

@@ -35,6 +35,14 @@ class BBox:
     def contains(self, lat: float, lon: float) -> bool:
         return self.min_lat <= lat <= self.max_lat and self.min_lon <= lon <= self.max_lon
 
+    def union(self, other: BBox) -> BBox:
+        return BBox(
+            min(self.min_lat, other.min_lat),
+            max(self.max_lat, other.max_lat),
+            min(self.min_lon, other.min_lon),
+            max(self.max_lon, other.max_lon),
+        )
+
 
 def data_dir() -> Path:
     return Path(os.environ.get("HIRUP_DATA_DIR") or ROOT / "data")
@@ -44,6 +52,18 @@ def pilot_bbox() -> BBox:
     """The frozen pilot bounds live in the golden OD contract (SPEC 6.1)."""
     raw = json.loads((ROOT / "contracts" / "golden_od.json").read_text(encoding="utf-8"))
     return BBox(**raw["bbox"])
+
+
+def map_bbox() -> BBox:
+    """Extent of the PM2.5 map: `map_extent` in the pipeline config, else the pilot bbox.
+
+    `HIRUP_MAP_EXTENT=pilot` forces the pilot bbox (unit tests keep the small grid)."""
+    extent = load_config().get("map_extent")
+    if os.environ.get("HIRUP_MAP_EXTENT") == "pilot" or not extent:
+        return pilot_bbox()
+    return BBox(
+        **{name: float(extent[name]) for name in ("min_lat", "max_lat", "min_lon", "max_lon")}
+    )
 
 
 @cache

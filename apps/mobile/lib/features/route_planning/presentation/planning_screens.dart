@@ -24,10 +24,13 @@ class ModeScreen extends ConsumerWidget {
         Expanded(child: ListView(padding: const EdgeInsets.fromLTRB(20, 12, 20, 24), children: [
           _JourneyCapsule(draft: draft), const SizedBox(height: 26),
           const PageHeader(eyebrow: 'Langkah 2 dari 2', title: 'Mau perjalanan seperti apa?', subtitle: 'Pilih moda utama. Kendaraan pribadi tetap ditampilkan sebagai pembanding.'), const SizedBox(height: 20),
-          GridView.count(shrinkWrap: true, physics: const NeverScrollableScrollPhysics(), crossAxisCount: 2, mainAxisSpacing: 12, crossAxisSpacing: 12, childAspectRatio: .95, children: data.entries.map((entry) {
+          GridView.count(shrinkWrap: true, physics: const NeverScrollableScrollPhysics(), crossAxisCount: 2, mainAxisSpacing: 12, crossAxisSpacing: 12, childAspectRatio: .92, children: data.entries.toList().asMap().entries.map((indexed) {
+            final tileIndex = indexed.key;
+            final entry = indexed.value;
             final selected = draft.mode == entry.key;
-            return InkWell(borderRadius: BorderRadius.circular(20), onTap: () => ref.read(journeyDraftProvider.notifier).setMode(entry.key), child: AnimatedContainer(duration: const Duration(milliseconds: 180), padding: const EdgeInsets.all(16), decoration: BoxDecoration(color: selected ? AppColors.surfaceMint : Colors.white, borderRadius: BorderRadius.circular(20), border: Border.all(color: selected ? AppColors.brand600 : AppColors.stroke, width: selected ? 2 : 1)), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Row(children: [Icon(entry.value.$1, color: AppColors.brand600, size: 30), const Spacer(), if (selected) const Icon(Icons.check_circle, color: AppColors.brand600)]), const Spacer(), Text(entry.value.$2, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16)), const SizedBox(height: 3), Text(entry.value.$3, style: const TextStyle(fontSize: 12, color: AppColors.ink600)),
+            final accent = [AppColors.mint300, AppColors.sky300, AppColors.sun300, AppColors.brand100][tileIndex];
+            return InkWell(borderRadius: BorderRadius.circular(20), onTap: () => ref.read(journeyDraftProvider.notifier).setMode(entry.key), child: AnimatedContainer(duration: const Duration(milliseconds: 180), padding: const EdgeInsets.all(16), decoration: BoxDecoration(color: selected ? accent : Colors.white, borderRadius: BorderRadius.only(topLeft: const Radius.circular(24), topRight: Radius.circular(tileIndex.isEven ? 8 : 24), bottomLeft: Radius.circular(tileIndex.isEven ? 8 : 24), bottomRight: const Radius.circular(24)), border: Border.all(color: selected ? AppColors.ink900 : AppColors.stroke, width: selected ? 1.5 : 1), boxShadow: selected ? const [BoxShadow(color: Color(0x22073C3B), offset: Offset(4, 5))] : null), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Row(children: [Text('0${tileIndex + 1}', style: const TextStyle(fontSize: 11, letterSpacing: .8, fontWeight: FontWeight.w900, color: AppColors.ink600)), const Spacer(), if (selected) const Icon(Icons.check_circle, color: AppColors.ink900)]), const SizedBox(height: 10), Icon(entry.value.$1, color: AppColors.brand800, size: 31), const Spacer(), Text(entry.value.$2, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16, color: AppColors.ink900)), const SizedBox(height: 3), Text(entry.value.$3, style: const TextStyle(fontSize: 12, color: AppColors.ink600)),
             ])));
           }).toList()),
           const SizedBox(height: 18), Container(padding: const EdgeInsets.all(16), decoration: BoxDecoration(color: AppColors.surfaceSky, borderRadius: BorderRadius.circular(18)), child: Row(children: [const Icon(Icons.tune, color: AppColors.sky700), const SizedBox(width: 12), Expanded(child: Text('Profil: ${draft.sensitivity == Sensitivity.rentan ? 'lebih sensitif' : 'umum'} · Maks. jalan 1 km'))])),
@@ -51,10 +54,10 @@ class ResultsScreen extends ConsumerWidget {
         return Column(children: [
           if (result.isDemo) const DemoBanner(),
           Expanded(child: ListView(padding: const EdgeInsets.fromLTRB(20, 12, 20, 36), children: [
-            _JourneyCapsule(draft: draft), const SizedBox(height: 14), const AirMapCard(compact: true), const SizedBox(height: 24),
+            _JourneyCapsule(draft: draft), const SizedBox(height: 14), AirMapCard(compact: true, interactive: false, origin: draft.origin, destination: draft.destination, route: result.options.isEmpty ? null : result.options.first), const SizedBox(height: 24),
             const PageHeader(eyebrow: 'Hasil perjalanan', title: 'Pilih perjalanan yang paling pas.', subtitle: 'Bandingkan udara yang dihirup dan menit yang dibutuhkan.'), const SizedBox(height: 18),
             Row(children: [QualityBadge(quality: result.dataQuality), const SizedBox(width: 8), Text('${formatTime(result.freshness.validHour)} · ${result.freshness.confidence}', style: const TextStyle(fontSize: 12, color: AppColors.ink600))]), const SizedBox(height: 16),
-            ...result.options.map((option) => Padding(padding: const EdgeInsets.only(bottom: 14), child: _RouteCard(option: option, onTap: () { ref.read(selectedRouteIdProvider.notifier).state = option.id; context.push('/plan/detail/${option.id}'); }))),
+            ...result.options.asMap().entries.map((entry) => Padding(padding: const EdgeInsets.only(bottom: 16), child: _RouteCard(index: entry.key + 1, option: entry.value, onTap: () { ref.read(selectedRouteIdProvider.notifier).state = entry.value.id; context.push('/plan/detail/${entry.value.id}'); }))),
             _ComparisonSection(motorcycle: result.motorcycle, car: result.car), const SizedBox(height: 18),
             Text(result.disclaimer, style: const TextStyle(fontSize: 12, color: AppColors.ink600)),
           ])),
@@ -78,20 +81,31 @@ class _JourneyCapsule extends StatelessWidget {
 }
 
 class _RouteCard extends StatelessWidget {
-  const _RouteCard({required this.option, required this.onTap});
+  const _RouteCard({required this.index, required this.option, required this.onTap});
+  final int index;
   final RouteOption option;
   final VoidCallback onTap;
   String label(String raw) => switch (raw) {'fastest' => 'Tercepat', 'cleanest' => 'Terbersih', 'balanced' => 'Seimbang', _ => raw};
   @override Widget build(BuildContext context) {
     final reduction = option.deltaDosePct < 0 ? '${option.deltaDosePct.abs().round()}% lebih rendah' : 'Acuan tercepat';
-    return Semantics(button: true, label: '${option.labels.map(label).join(', ')}, ${formatDuration(option.durationS)}, estimasi dosis ${formatDose(option.doseUg)}, $reduction', child: Card(
-      child: InkWell(borderRadius: BorderRadius.circular(20), onTap: onTap, child: Padding(padding: const EdgeInsets.all(18), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Row(children: [Expanded(child: Wrap(spacing: 6, runSpacing: 6, children: option.labels.map((e) => Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5), decoration: BoxDecoration(color: AppColors.brand100, borderRadius: BorderRadius.circular(99)), child: Text(label(e), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: AppColors.brand800)))).toList())), const Icon(Icons.chevron_right)]),
-        const SizedBox(height: 16), Row(crossAxisAlignment: CrossAxisAlignment.end, children: [Text(formatDuration(option.durationS), style: const TextStyle(fontSize: 27, fontWeight: FontWeight.w800)), const Spacer(), Text(formatDose(option.doseUg), style: const TextStyle(fontSize: 21, fontWeight: FontWeight.w800, color: AppColors.brand600))]),
-        const SizedBox(height: 7), Text('$reduction · ${option.deltaDurationS > 0 ? '+${formatDuration(option.deltaDurationS)}' : 'tanpa tambahan waktu'}', style: const TextStyle(fontWeight: FontWeight.w700)),
-        const SizedBox(height: 12), ClipRRect(borderRadius: BorderRadius.circular(8), child: LinearProgressIndicator(minHeight: 8, value: (option.doseUg / 35).clamp(0, 1).toDouble(), backgroundColor: AppColors.stroke, color: AppColors.brand600)),
-        const SizedBox(height: 10), Text('Rentang ${formatDose(option.doseP10)}–${formatDose(option.doseP90)} · ${option.transfers} transit', style: const TextStyle(fontSize: 12, color: AppColors.ink600)),
-      ]))),
+    final accent = index == 1 ? AppColors.sun300 : index == 2 ? AppColors.mint300 : AppColors.sky300;
+    return Semantics(button: true, label: '${option.labels.map(label).join(', ')}, ${formatDuration(option.durationS)}, estimasi dosis ${formatDose(option.doseUg)}, $reduction', child: Container(
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(22), border: Border.all(color: AppColors.ink900, width: 1.2), boxShadow: const [BoxShadow(color: Color(0x16073C3B), offset: Offset(4, 5))]),
+      child: InkWell(borderRadius: BorderRadius.circular(22), onTap: onTap, child: Column(children: [
+        Container(padding: const EdgeInsets.fromLTRB(16, 12, 12, 12), decoration: BoxDecoration(color: accent, borderRadius: const BorderRadius.vertical(top: Radius.circular(21))), child: Row(children: [
+          Text('0$index', style: const TextStyle(fontSize: 30, height: 1, fontWeight: FontWeight.w900, color: AppColors.ink900)),
+          const SizedBox(width: 12),
+          Expanded(child: Wrap(spacing: 6, runSpacing: 6, children: option.labels.map((e) => Text(label(e).toUpperCase(), style: const TextStyle(fontSize: 11, letterSpacing: .7, fontWeight: FontWeight.w900, color: AppColors.ink900))).toList())),
+          const Icon(Icons.arrow_outward, color: AppColors.ink900),
+        ])),
+        Padding(padding: const EdgeInsets.all(17), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(crossAxisAlignment: CrossAxisAlignment.end, children: [Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [const Text('WAKTU', style: TextStyle(fontSize: 10, letterSpacing: .8, fontWeight: FontWeight.w800, color: AppColors.ink600)), Text(formatDuration(option.durationS), style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w900, color: AppColors.ink900))])), Container(width: 1, height: 44, color: AppColors.stroke), const SizedBox(width: 16), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [const Text('ESTIMASI DOSIS', style: TextStyle(fontSize: 10, letterSpacing: .8, fontWeight: FontWeight.w800, color: AppColors.ink600)), Text(formatDose(option.doseUg), style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: AppColors.brand600))]))]),
+          const SizedBox(height: 13),
+          Text('$reduction · ${option.deltaDurationS > 0 ? '+${formatDuration(option.deltaDurationS)}' : 'tanpa tambahan waktu'}', style: const TextStyle(fontWeight: FontWeight.w800, color: AppColors.ink900)),
+          const SizedBox(height: 12), ClipRRect(borderRadius: BorderRadius.circular(8), child: LinearProgressIndicator(minHeight: 7, value: (option.doseUg / 35).clamp(0, 1).toDouble(), backgroundColor: AppColors.stroke, color: AppColors.brand600)),
+          const SizedBox(height: 9), Text('Rentang ${formatDose(option.doseP10)}–${formatDose(option.doseP90)} · ${option.transfers} transit', style: const TextStyle(fontSize: 12, color: AppColors.ink600)),
+        ])),
+      ])),
     ));
   }
 }
@@ -125,7 +139,7 @@ class DetailScreen extends ConsumerWidget {
       appBar: AppBar(title: const Text('Detail rute')),
       bottomNavigationBar: SafeArea(child: Container(padding: const EdgeInsets.all(16), decoration: const BoxDecoration(color: Colors.white, border: Border(top: BorderSide(color: AppColors.stroke))), child: FilledButton.icon(onPressed: () { ref.read(selectedRouteIdProvider.notifier).state = option.id; context.push('/trip/active'); }, icon: const Icon(Icons.navigation_outlined), label: const Text('Mulai perjalanan')))),
       body: Column(children: [if (result.isDemo) const DemoBanner(), Expanded(child: ListView(padding: const EdgeInsets.fromLTRB(20, 12, 20, 30), children: [
-        const AirMapCard(compact: true), const SizedBox(height: 20),
+        AirMapCard(origin: option.legs.isEmpty ? null : option.legs.first.from, destination: option.legs.isEmpty ? null : option.legs.last.to, route: option), const SizedBox(height: 20),
         Row(crossAxisAlignment: CrossAxisAlignment.end, children: [Expanded(child: Text(formatDuration(option.durationS), style: Theme.of(context).textTheme.headlineMedium)), Text(formatDose(option.doseUg), style: const TextStyle(fontSize: 25, fontWeight: FontWeight.w800, color: AppColors.brand600))]),
         const SizedBox(height: 5), Text('${formatTime(option.departAt)}–${formatTime(option.arriveAt)} · ${(option.distanceM / 1000).toStringAsFixed(1)} km · ${option.transfers} transit', style: const TextStyle(color: AppColors.ink600)), const SizedBox(height: 16),
         Container(padding: const EdgeInsets.all(16), decoration: BoxDecoration(color: AppColors.surfaceMint, borderRadius: BorderRadius.circular(18)), child: Text('Estimasi dosis ${formatDose(option.doseUg)} dengan rentang ${formatDose(option.doseP10)} sampai ${formatDose(option.doseP90)}.', style: const TextStyle(fontWeight: FontWeight.w700))),
@@ -191,7 +205,7 @@ class _ActiveTripScreenState extends ConsumerState<ActiveTripScreen> {
     return Scaffold(body: SafeArea(child: Column(children: [
       if (result.isDemo) const DemoBanner(),
       Padding(padding: const EdgeInsets.all(12), child: Row(children: [IconButton(onPressed: () => context.pop(), icon: const Icon(Icons.close)), const Expanded(child: Text('Perjalanan aktif', textAlign: TextAlign.center, style: TextStyle(fontWeight: FontWeight.w800))), const SizedBox(width: 48)])),
-      const Expanded(child: Padding(padding: EdgeInsets.symmetric(horizontal: 16), child: AirMapCard())),
+      Expanded(child: Padding(padding: const EdgeInsets.symmetric(horizontal: 16), child: SingleChildScrollView(child: AirMapCard(origin: option.legs.first.from, destination: option.legs.last.to, route: option, highlightLeg: legIndex)))),
       Container(width: double.infinity, padding: const EdgeInsets.fromLTRB(20, 22, 20, 16), decoration: const BoxDecoration(color: Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(28))), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Text('Langkah ${currentLeg + 1} dari ${option.legs.length}', style: const TextStyle(fontSize: 11, color: AppColors.brand600, fontWeight: FontWeight.w800)), const SizedBox(height: 7), Text('${leg.from.name} → ${leg.to.name}', style: Theme.of(context).textTheme.titleLarge), const SizedBox(height: 8), Text('${formatDuration(leg.durationS)} · estimasi ${formatDose(leg.doseUg)}', style: const TextStyle(color: AppColors.ink600)), const SizedBox(height: 18),
         SizedBox(width: double.infinity, child: FilledButton(onPressed: () {

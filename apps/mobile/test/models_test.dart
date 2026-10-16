@@ -11,6 +11,13 @@ void main() {
     expect((json['profile'] as Map)['sensitivity'], 'rentan');
     expect(json.containsKey('include_comparison'), isTrue);
     expect(json.containsKey('arrive_at'), isFalse);
+    expect(json['depart_at'], '2026-10-16T00:00:00.000Z');
+  });
+
+  test('Local departure times are sent with an explicit offset', () {
+    final local = DateTime(2026, 10, 16, 7);
+    expect(apiTimestamp(local), endsWith('Z'));
+    expect(DateTime.parse(apiTimestamp(local)), local.toUtc());
   });
 
   test('PlanResult keeps multi-label routes as one option', () {

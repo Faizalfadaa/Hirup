@@ -1,8 +1,8 @@
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
 
 import '../core/theme/app_theme.dart';
+import '../features/route_planning/domain/models.dart';
+import 'air_map.dart';
 
 class PageHeader extends StatelessWidget {
   const PageHeader({super.key, required this.eyebrow, required this.title, required this.subtitle});
@@ -11,7 +11,7 @@ class PageHeader extends StatelessWidget {
   final String subtitle;
   @override Widget build(BuildContext context) => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Text(eyebrow.toUpperCase(), style: const TextStyle(fontSize: 11, letterSpacing: .8, fontWeight: FontWeight.w800, color: AppColors.brand600)),
-        const SizedBox(height: 8), Text(title, style: Theme.of(context).textTheme.headlineMedium),
+        const SizedBox(height: 8), Text(title, style: Theme.of(context).textTheme.headlineMedium?.copyWith(color: AppColors.ink900)),
         const SizedBox(height: 8), Text(subtitle, style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: AppColors.ink600)),
       ]);
 }
@@ -35,46 +35,32 @@ class QualityBadge extends StatelessWidget {
 }
 
 class AirMapCard extends StatelessWidget {
-  const AirMapCard({super.key, this.compact = false});
+  const AirMapCard({super.key, this.compact = false, this.origin, this.destination, this.route, this.highlightLeg, this.interactive = true});
   final bool compact;
+  final PlacePoint? origin;
+  final PlacePoint? destination;
+  final RouteOption? route;
+  final int? highlightLeg;
+  final bool interactive;
   @override Widget build(BuildContext context) => Semantics(
-        label: 'Peta interaktif belum tersedia. Ilustrasi ini tidak menunjukkan rute sebenarnya.',
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(24),
-          child: SizedBox(
-            height: compact ? 150 : 310,
-            width: double.infinity,
-            child: CustomPaint(
-              painter: _MapPainter(),
+        label: route != null ? 'Peta rute, warna garis menunjukkan estimasi PM2.5 per ruas.' : 'Peta area pilot Jakarta dengan estimasi PM2.5.',
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(24),
+            child: Container(
+              height: compact ? 190 : 310,
+              width: double.infinity,
+              decoration: BoxDecoration(border: Border.all(color: AppColors.stroke), borderRadius: BorderRadius.circular(24)),
               child: Stack(children: [
-                Positioned(bottom: 14, left: 14, right: 14, child: Container(padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: Colors.white.withOpacity(.94), borderRadius: BorderRadius.circular(14)), child: const Row(children: [Icon(Icons.map_outlined, size: 20), SizedBox(width: 8), Expanded(child: Text('Peta interaktif belum tersedia · ilustrasi area', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12)))]))),
+                Positioned.fill(child: AirMap(origin: origin, destination: destination, route: route, highlightLeg: highlightLeg, interactive: interactive)),
+                Positioned(top: 13, left: 13, child: IgnorePointer(child: Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6), decoration: BoxDecoration(color: AppColors.ink900, borderRadius: BorderRadius.circular(8)), child: const Text('JKT / AIR GRID 01', style: TextStyle(fontSize: 9, letterSpacing: .8, fontWeight: FontWeight.w900, color: AppColors.mint300))))),
               ]),
             ),
           ),
-        ),
+          if (route != null) const Padding(padding: EdgeInsets.only(top: 8, left: 4), child: Pm25Legend()),
+        ]),
       );
 }
-
-class _MapPainter extends CustomPainter {
-  @override void paint(Canvas canvas, Size size) {
-    canvas.drawRect(Offset.zero & size, Paint()..color = AppColors.surfaceSky);
-    final road = Paint()..color = Colors.white..strokeWidth = 8..style = PaintingStyle.stroke..strokeCap = StrokeCap.round;
-    for (var i = 0; i < 5; i++) {
-      final path = Path()..moveTo(-20, size.height * (.18 + i * .17));
-      for (double x = 0; x <= size.width + 40; x += 30) {
-        path.lineTo(x, size.height * (.18 + i * .17) + math.sin(x / 55 + i) * 24);
-      }
-      canvas.drawPath(path, road);
-    }
-    final route = Paint()..color = AppColors.brand600..strokeWidth = 6..style = PaintingStyle.stroke..strokeCap = StrokeCap.round;
-    canvas.drawPath(Path()..moveTo(size.width * .14, size.height * .83)..cubicTo(size.width * .38, size.height * .72, size.width * .52, size.height * .35, size.width * .86, size.height * .18), route);
-    for (final point in [Offset(size.width * .14, size.height * .83), Offset(size.width * .86, size.height * .18)]) {
-      canvas.drawCircle(point, 9, Paint()..color = Colors.white); canvas.drawCircle(point, 6, Paint()..color = AppColors.brand900);
-    }
-  }
-  @override bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
-}
-
 class ErrorPanel extends StatelessWidget {
   const ErrorPanel({super.key, required this.message, required this.onRetry});
   final String message;

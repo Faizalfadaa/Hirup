@@ -6,6 +6,16 @@ grid:
   crs: EPSG:32748
   resolution_m: 100 # SPEC 6.1
 
+# Extent of the PM2.5 map (grid, rasters, tiles, Insight Kota). Routing stays inside the
+# frozen pilot bbox in contracts/golden_od.json. Team decision 2026-10-16: an approximate
+# bounding box of mainland DKI Jakarta (Kepulauan Seribu excluded); design choice, not a
+# scientific constant. It must contain the pilot bbox.
+map_extent:
+  min_lat: -6.375
+  max_lat: -6.085
+  min_lon: 106.685
+  max_lon: 106.975
+
 stations:
   buffer_km: 10 # SPEC 10.1, H0 validation: pilot area +/- 10 km
 
@@ -13,6 +23,7 @@ openaq:
   base_url: https://api.openaq.org/v3
   min_interval_s: 1.1 # SPEC 10.1: 60 requests/minute, 2,000/hour
   page_limit: 1000
+  ended_after_days: 7 # team choice: last_seen older than this = station ended; newer = still query up to now
   parameter: pm25
 
 waqi:

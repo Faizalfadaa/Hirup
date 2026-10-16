@@ -31,7 +31,7 @@ from hirup_pipelines import store
 from hirup_pipelines.grid import CRS
 from hirup_pipelines.http import Client, HttpError
 from hirup_pipelines.ingest.rasters import download
-from hirup_pipelines.settings import BBox, data_dir, load_config, pilot_bbox
+from hirup_pipelines.settings import BBox, data_dir, load_config, map_bbox, pilot_bbox
 
 log = logging.getLogger(__name__)
 Coords = list[tuple[float, float]]
@@ -85,9 +85,11 @@ def index_dir() -> Path:
 
 
 def index_area() -> BBox:
-    """Everything a feature build can ask for: the station search area plus a margin."""
+    """Everything a feature build can ask for: the station search area and the map, plus a
+    margin. Changing it means rebuilding the index (`hirup-pipelines osm-index`)."""
     cfg = load_config()
-    return pilot_bbox().expand_km(float(cfg["stations"]["buffer_km"]) + 2.0)
+    stations = pilot_bbox().expand_km(float(cfg["stations"]["buffer_km"]))
+    return stations.union(map_bbox()).expand_km(2.0)
 
 
 def pbf_path() -> Path:

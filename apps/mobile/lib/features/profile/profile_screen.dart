@@ -20,7 +20,7 @@ class ProfileScreen extends ConsumerWidget {
       const SizedBox(height: 24),
       Card(child: Column(children: [
         SwitchListTile(value: demo, onChanged: (value) => ref.read(demoModeProvider.notifier).state = value, title: const Text('Mode demo', style: TextStyle(fontWeight: FontWeight.w700)), subtitle: const Text('Memakai fixture offline yang selalu diberi label data simulasi.')),
-        if (demo) Padding(padding: const EdgeInsets.fromLTRB(16, 0, 16, 16), child: DropdownButtonFormField<int>(value: ref.watch(demoScenarioProvider), decoration: const InputDecoration(labelText: 'Skenario demo'), items: List.generate(5, (i) => DropdownMenuItem(value: i, child: Text('Skenario ${i + 1}'))), onChanged: (value) { if (value != null) ref.read(demoScenarioProvider.notifier).state = value; })),
+        if (demo) Padding(padding: const EdgeInsets.fromLTRB(16, 0, 16, 16), child: DropdownButtonFormField<int>(key: ValueKey(ref.watch(demoScenarioProvider)), initialValue: ref.watch(demoScenarioProvider), decoration: const InputDecoration(labelText: 'Skenario demo'), items: List.generate(5, (i) => DropdownMenuItem(value: i, child: Text('Skenario ${i + 1}'))), onChanged: (value) { if (value != null) ref.read(demoScenarioProvider.notifier).state = value; })),
       ])),
       const SizedBox(height: 16),
       Card(child: Column(children: [

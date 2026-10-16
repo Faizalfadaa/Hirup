@@ -1,12 +1,18 @@
 enum PlanMode { transit, bike, walk, all }
 enum Sensitivity { umum, rentan }
 
+/// The API rejects timestamps without an offset; UTC (`...Z`) is always explicit.
+String apiTimestamp(DateTime value) => value.toUtc().toIso8601String();
+
 class PlacePoint {
   const PlacePoint({required this.name, required this.lat, required this.lon});
   final String name;
   final double lat;
   final double lon;
   Map<String, dynamic> toCoordinatesJson() => {'lat': lat, 'lon': lon};
+  /// Routes are planned only inside the pilot corridor (SPEC 6.1, contracts/golden_od.json).
+  bool get insideRoutingPilot => lat >= -6.30 && lat <= -6.13 && lon >= 106.76 && lon <= 106.85;
+  bool samePlaceAs(PlacePoint other) => lat == other.lat && lon == other.lon;
   factory PlacePoint.fromJson(Map<String, dynamic> json) => PlacePoint(
         name: json['name'] as String? ?? 'Titik',
         lat: (json['lat'] as num).toDouble(),
@@ -47,7 +53,7 @@ class JourneyDraft {
   Map<String, dynamic> toPlanJson() => {
         'origin': origin.toCoordinatesJson(),
         'destination': destination.toCoordinatesJson(),
-        'depart_at': departAt.toIso8601String(),
+        'depart_at': apiTimestamp(departAt),
         'mode': mode.name,
         'profile': {'sensitivity': sensitivity.name, 'max_walk_m': 1000},
         'include_comparison': true,
@@ -67,7 +73,7 @@ class DataFreshness {
 }
 
 class TripLeg {
-  const TripLeg({required this.mode, required this.startTime, required this.endTime, required this.durationS, required this.from, required this.to, required this.meanPm25, required this.doseUg, this.routeName});
+  const TripLeg({required this.mode, required this.startTime, required this.endTime, required this.durationS, required this.from, required this.to, required this.meanPm25, required this.doseUg, this.routeName, this.polyline, this.segmentsPm25});
   final String mode;
   final DateTime startTime;
   final DateTime endTime;
@@ -77,6 +83,10 @@ class TripLeg {
   final double meanPm25;
   final double doseUg;
   final String? routeName;
+  /// Encoded polyline (precision 6); null for WAIT legs.
+  final String? polyline;
+  /// P50 PM2.5 per polyline segment, for colouring the route (FR-04).
+  final List<double>? segmentsPm25;
   factory TripLeg.fromJson(Map<String, dynamic> json) {
     final route = json['route'] as Map<String, dynamic>?;
     return TripLeg(
@@ -89,6 +99,8 @@ class TripLeg {
       meanPm25: (json['mean_pm25'] as num).toDouble(),
       doseUg: (json['dose_ug'] as num).toDouble(),
       routeName: route?['short_name'] as String? ?? route?['long_name'] as String?,
+      polyline: json['polyline'] as String?,
+      segmentsPm25: (json['segments_pm25'] as List<dynamic>?)?.map((value) => (value as num).toDouble()).toList(),
     );
   }
 }

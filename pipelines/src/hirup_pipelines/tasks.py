@@ -79,6 +79,7 @@ def ingest_openaq(days: int, chunk_days: int = 90) -> int:
     now = datetime.now(UTC)
     floor = now - timedelta(days=days)
     seen = _last_seen()
+    ended_after = timedelta(days=int(load_config()["openaq"]["ended_after_days"]))
     failed: list[str] = []
     with store.log_run("openaq") as run, openaq.client() as http:
         for station in stations.itertuples(index=False):
@@ -86,8 +87,12 @@ def ingest_openaq(days: int, chunk_days: int = 90) -> int:
             start = max(floor, _window(station.first_seen) or floor)
             if last is not None:
                 start = max(start, (last - timedelta(hours=3)).to_pydatetime())
+            # `last_seen` is stamped at discovery, so it lags for an active station.
+            # Clamp only stations that stopped reporting long before that.
             reported = _window(station.last_seen)
-            end = min(now, reported + timedelta(hours=1)) if reported else now
+            end = now
+            if reported is not None and now - reported > ended_after:
+                end = reported + timedelta(hours=1)
             cursor = start
             while cursor < end:
                 stop = min(end, cursor + timedelta(days=chunk_days))
