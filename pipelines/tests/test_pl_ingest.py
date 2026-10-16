@@ -295,3 +295,20 @@ def test_openaq_ingest_ignores_a_stale_last_seen_on_active_stations(monkeypatch)
     tasks.ingest_openaq(days=3)
     assert ends["openaq:1"] >= now
     assert "openaq:2" not in ends  # ended before the window: nothing to ask for
+
+
+def test_atomic_writes_retry_a_briefly_locked_target(monkeypatch, tmp_path):
+    real_replace, calls = store.os.replace, []
+
+    def locked_twice(src, dst):
+        calls.append(dst)
+        if len(calls) < 3:
+            raise PermissionError("locked by another process")
+        real_replace(src, dst)
+
+    monkeypatch.setattr(store.os, "replace", locked_twice)
+    monkeypatch.setattr(store.time, "sleep", lambda s: None)
+    store.write_json({"ok": True}, tmp_path / "x.json")
+    assert store.read_json(tmp_path / "x.json") == {"ok": True}
+    assert len(calls) == 3
+    assert not list(tmp_path.glob(".x.json.*.tmp"))
