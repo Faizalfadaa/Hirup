@@ -1,6 +1,9 @@
 enum PlanMode { transit, bike, walk, all }
 enum Sensitivity { umum, rentan }
 
+/// The API rejects timestamps without an offset; UTC (`...Z`) is always explicit.
+String apiTimestamp(DateTime value) => value.toUtc().toIso8601String();
+
 class PlacePoint {
   const PlacePoint({required this.name, required this.lat, required this.lon});
   final String name;
@@ -47,7 +50,7 @@ class JourneyDraft {
   Map<String, dynamic> toPlanJson() => {
         'origin': origin.toCoordinatesJson(),
         'destination': destination.toCoordinatesJson(),
-        'depart_at': departAt.toIso8601String(),
+        'depart_at': apiTimestamp(departAt),
         'mode': mode.name,
         'profile': {'sensitivity': sensitivity.name, 'max_walk_m': 1000},
         'include_comparison': true,

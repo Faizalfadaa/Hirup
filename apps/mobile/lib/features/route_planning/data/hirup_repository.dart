@@ -42,7 +42,7 @@ class ApiHirupRepository implements HirupRepository {
     try {
       final response = await _dio.get<Map<String, dynamic>>('/v1/routes/departure-advice', queryParameters: {
         'origin_lat': draft.origin.lat, 'origin_lon': draft.origin.lon, 'destination_lat': draft.destination.lat, 'destination_lon': draft.destination.lon,
-        'around': draft.departAt.toIso8601String(), 'mode': draft.mode.name, 'sensitivity': draft.sensitivity.name,
+        'around': apiTimestamp(draft.departAt), 'mode': draft.mode.name, 'sensitivity': draft.sensitivity.name,
       });
       return DepartureAdvice.fromJson(response.data!);
     } on DioException catch (error) { throw _problem(error, 'Saran waktu belum tersedia.'); }
