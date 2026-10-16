@@ -11,7 +11,7 @@ class PageHeader extends StatelessWidget {
   final String subtitle;
   @override Widget build(BuildContext context) => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Text(eyebrow.toUpperCase(), style: const TextStyle(fontSize: 11, letterSpacing: .8, fontWeight: FontWeight.w800, color: AppColors.brand600)),
-        const SizedBox(height: 8), Text(title, style: Theme.of(context).textTheme.headlineMedium),
+        const SizedBox(height: 8), Text(title, style: Theme.of(context).textTheme.headlineMedium?.copyWith(color: AppColors.ink900)),
         const SizedBox(height: 8), Text(subtitle, style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: AppColors.ink600)),
       ]);
 }
@@ -47,7 +47,9 @@ class AirMapCard extends StatelessWidget {
             child: CustomPaint(
               painter: _MapPainter(),
               child: Stack(children: [
-                Positioned(bottom: 14, left: 14, right: 14, child: Container(padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: Colors.white.withOpacity(.94), borderRadius: BorderRadius.circular(14)), child: const Row(children: [Icon(Icons.map_outlined, size: 20), SizedBox(width: 8), Expanded(child: Text('Peta interaktif belum tersedia · ilustrasi area', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12)))]))),
+                Positioned(top: 13, left: 13, child: Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6), decoration: BoxDecoration(color: AppColors.ink900, borderRadius: BorderRadius.circular(8)), child: const Text('JKT / AIR GRID 01', style: TextStyle(fontSize: 9, letterSpacing: .8, fontWeight: FontWeight.w900, color: AppColors.mint300)))),
+                Positioned(top: 14, right: 14, child: Container(width: 36, height: 36, decoration: BoxDecoration(color: AppColors.sun300, borderRadius: BorderRadius.circular(12), border: Border.all(color: AppColors.ink900)), child: const Icon(Icons.my_location, size: 18, color: AppColors.ink900))),
+                Positioned(bottom: 14, left: 14, right: 14, child: Container(padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: Colors.white.withValues(alpha: .94), borderRadius: BorderRadius.circular(14)), child: const Row(children: [Icon(Icons.map_outlined, size: 20), SizedBox(width: 8), Expanded(child: Text('Peta interaktif belum tersedia · ilustrasi area', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: AppColors.ink900)))]))),
               ]),
             ),
           ),
@@ -58,19 +60,24 @@ class AirMapCard extends StatelessWidget {
 class _MapPainter extends CustomPainter {
   @override void paint(Canvas canvas, Size size) {
     canvas.drawRect(Offset.zero & size, Paint()..color = AppColors.surfaceSky);
-    final road = Paint()..color = Colors.white..strokeWidth = 8..style = PaintingStyle.stroke..strokeCap = StrokeCap.round;
-    for (var i = 0; i < 5; i++) {
-      final path = Path()..moveTo(-20, size.height * (.18 + i * .17));
-      for (double x = 0; x <= size.width + 40; x += 30) {
-        path.lineTo(x, size.height * (.18 + i * .17) + math.sin(x / 55 + i) * 24);
-      }
-      canvas.drawPath(path, road);
+    final block = Paint()..color = const Color(0xFFDDEAE5);
+    final blocks = <RRect>[
+      RRect.fromRectAndRadius(Rect.fromLTWH(size.width * .05, size.height * .16, size.width * .22, size.height * .2), const Radius.circular(12)),
+      RRect.fromRectAndRadius(Rect.fromLTWH(size.width * .64, size.height * .1, size.width * .29, size.height * .22), const Radius.circular(14)),
+      RRect.fromRectAndRadius(Rect.fromLTWH(size.width * .1, size.height * .55, size.width * .26, size.height * .27), const Radius.circular(15)),
+      RRect.fromRectAndRadius(Rect.fromLTWH(size.width * .69, size.height * .56, size.width * .25, size.height * .25), const Radius.circular(12)),
+    ];
+    for (final shape in blocks) { canvas.drawRRect(shape, block); }
+    final airflow = Paint()..color = Colors.white..strokeWidth = 7..style = PaintingStyle.stroke..strokeCap = StrokeCap.round;
+    for (var i = 0; i < 4; i++) {
+      final path = Path()..moveTo(-18, size.height * (.28 + i * .15));
+      for (double x = 0; x <= size.width + 40; x += 24) { path.lineTo(x, size.height * (.28 + i * .15) + math.sin(x / 48 + i * .7) * 19); }
+      canvas.drawPath(path, airflow);
     }
-    final route = Paint()..color = AppColors.brand600..strokeWidth = 6..style = PaintingStyle.stroke..strokeCap = StrokeCap.round;
-    canvas.drawPath(Path()..moveTo(size.width * .14, size.height * .83)..cubicTo(size.width * .38, size.height * .72, size.width * .52, size.height * .35, size.width * .86, size.height * .18), route);
-    for (final point in [Offset(size.width * .14, size.height * .83), Offset(size.width * .86, size.height * .18)]) {
-      canvas.drawCircle(point, 9, Paint()..color = Colors.white); canvas.drawCircle(point, 6, Paint()..color = AppColors.brand900);
-    }
+    final marker = Offset(size.width * .57, size.height * .44);
+    canvas.drawCircle(marker, 34, Paint()..color = AppColors.mint300.withValues(alpha: .36));
+    canvas.drawCircle(marker, 17, Paint()..color = AppColors.sun300);
+    canvas.drawCircle(marker, 7, Paint()..color = AppColors.ink900);
   }
   @override bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
