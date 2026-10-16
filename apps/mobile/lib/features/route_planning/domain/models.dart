@@ -11,6 +11,13 @@ class PlacePoint {
   final double lat;
   final double lon;
   Map<String, dynamic> toCoordinatesJson() => {'lat': lat, 'lon': lon};
+
+  /// Route planning is currently limited to the Jakarta pilot corridor.
+  bool get insideRoutingPilot =>
+      lat >= -6.30 && lat <= -6.13 && lon >= 106.76 && lon <= 106.85;
+
+  bool samePlaceAs(PlacePoint other) => lat == other.lat && lon == other.lon;
+
   factory PlacePoint.fromJson(Map<String, dynamic> json) => PlacePoint(
         name: json['name'] as String? ?? 'Titik',
         lat: (json['lat'] as num).toDouble(),
@@ -95,7 +102,9 @@ class TripLeg {
       required this.to,
       required this.meanPm25,
       required this.doseUg,
-      this.routeName});
+      this.routeName,
+      this.polyline,
+      this.segmentsPm25});
   final String mode;
   final DateTime startTime;
   final DateTime endTime;
@@ -105,6 +114,12 @@ class TripLeg {
   final double meanPm25;
   final double doseUg;
   final String? routeName;
+
+  /// Encoded polyline (precision 6); null for WAIT legs.
+  final String? polyline;
+
+  /// P50 PM2.5 per polyline segment, for colouring the route.
+  final List<double>? segmentsPm25;
   factory TripLeg.fromJson(Map<String, dynamic> json) {
     final route = json['route'] as Map<String, dynamic>?;
     return TripLeg(
@@ -118,6 +133,10 @@ class TripLeg {
       doseUg: (json['dose_ug'] as num).toDouble(),
       routeName:
           route?['short_name'] as String? ?? route?['long_name'] as String?,
+      polyline: json['polyline'] as String?,
+      segmentsPm25: (json['segments_pm25'] as List<dynamic>?)
+          ?.map((value) => (value as num).toDouble())
+          .toList(),
     );
   }
 }

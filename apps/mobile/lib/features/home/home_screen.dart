@@ -31,12 +31,6 @@ const _greenPlaces = <_GreenPlace>[
   ),
 ];
 
-List<PlacePoint> _placesIncluding(PlacePoint selected) {
-  final exists = pilotPlaces
-      .any((place) => place.lat == selected.lat && place.lon == selected.lon);
-  return exists ? pilotPlaces : [...pilotPlaces, selected];
-}
-
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
 
@@ -49,7 +43,6 @@ class HomeScreen extends ConsumerWidget {
       value: SystemUiOverlayStyle.light,
       child: Scaffold(
         body: Column(children: [
-          if (demo) const DemoBanner(),
           Expanded(
               child: CustomScrollView(slivers: [
             SliverToBoxAdapter(
@@ -74,7 +67,10 @@ class HomeScreen extends ConsumerWidget {
                         label: const Text('Lapisan'))
                   ]),
                   const SizedBox(height: 6),
-                  const AirMapCard(compact: true),
+                  AirMapCard(
+                      compact: true,
+                      origin: draft.origin,
+                      destination: draft.destination),
                   const SizedBox(height: 20),
                   Text('Mau ke mana?',
                       style: Theme.of(context)
@@ -720,30 +716,11 @@ class _JourneyCard extends ConsumerWidget {
           Padding(
               padding: const EdgeInsets.fromLTRB(13, 10, 13, 13),
               child: Column(children: [
-                DropdownButtonFormField<PlacePoint>(
-                  key: ValueKey('origin-${draft.origin.name}'),
-                  initialValue: draft.origin,
-                  isDense: true,
-                  iconSize: 18,
-                  style: const TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.ink900),
-                  decoration: const InputDecoration(
-                      labelText: 'Asal',
-                      prefixIcon: Icon(Icons.trip_origin, size: 18),
-                      contentPadding:
-                          EdgeInsets.symmetric(horizontal: 12, vertical: 10)),
-                  items: _placesIncluding(draft.origin)
-                      .map((p) =>
-                          DropdownMenuItem(value: p, child: Text(p.name)))
-                      .toList(),
-                  onChanged: (p) {
-                    if (p != null) {
-                      ref.read(journeyDraftProvider.notifier).setOrigin(p);
-                    }
-                  },
-                ),
+                _PlaceField(
+                    label: 'Asal',
+                    place: draft.origin,
+                    icon: Icons.trip_origin,
+                    onTap: () => context.push('/place/origin')),
                 SizedBox(
                     height: 32,
                     child: Row(children: [
@@ -758,30 +735,29 @@ class _JourneyCard extends ConsumerWidget {
                           icon: const Icon(Icons.swap_vert, size: 18)),
                       const Expanded(child: Divider())
                     ])),
-                DropdownButtonFormField<PlacePoint>(
-                  key: ValueKey('destination-${draft.destination.name}'),
-                  initialValue: draft.destination,
-                  isDense: true,
-                  iconSize: 18,
-                  style: const TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.ink900),
-                  decoration: const InputDecoration(
-                      labelText: 'Tujuan',
-                      prefixIcon: Icon(Icons.location_on_outlined, size: 18),
-                      contentPadding:
-                          EdgeInsets.symmetric(horizontal: 12, vertical: 10)),
-                  items: _placesIncluding(draft.destination)
-                      .map((p) =>
-                          DropdownMenuItem(value: p, child: Text(p.name)))
-                      .toList(),
-                  onChanged: (p) {
-                    if (p != null) {
-                      ref.read(journeyDraftProvider.notifier).setDestination(p);
-                    }
-                  },
-                ),
+                _PlaceField(
+                    label: 'Tujuan',
+                    place: draft.destination,
+                    icon: Icons.location_on_outlined,
+                    onTap: () => context.push('/place/destination')),
+                if (!draft.origin.insideRoutingPilot ||
+                    !draft.destination.insideRoutingPilot)
+                  const Padding(
+                    padding: EdgeInsets.only(top: 8),
+                    child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(Icons.info_outline,
+                              size: 16, color: AppColors.danger700),
+                          SizedBox(width: 6),
+                          Expanded(
+                              child: Text(
+                                  'Rute tersedia di koridor pilot Lebak Bulus–Kota. Kualitas udara di titik lain tetap bisa dilihat di peta.',
+                                  style: TextStyle(
+                                      fontSize: 11,
+                                      color: AppColors.danger700))),
+                        ]),
+                  ),
                 const SizedBox(height: 7),
                 Row(children: [
                   const Icon(Icons.schedule, size: 17),
@@ -816,9 +792,12 @@ class _JourneyCard extends ConsumerWidget {
                     width: double.infinity,
                     height: 44,
                     child: FilledButton(
-                        onPressed: draft.origin == draft.destination
-                            ? null
-                            : () => context.push('/plan/mode'),
+                        onPressed:
+                            draft.origin.samePlaceAs(draft.destination) ||
+                                    !draft.origin.insideRoutingPilot ||
+                                    !draft.destination.insideRoutingPilot
+                                ? null
+                                : () => context.push('/plan/mode'),
                         child: const Row(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
@@ -833,6 +812,45 @@ class _JourneyCard extends ConsumerWidget {
                             ]))),
               ])),
         ]),
+      );
+}
+
+class _PlaceField extends StatelessWidget {
+  const _PlaceField(
+      {required this.label,
+      required this.place,
+      required this.icon,
+      required this.onTap});
+
+  final String label;
+  final PlacePoint place;
+  final IconData icon;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+        button: true,
+        label: '$label: ${place.name}. Ketuk untuk mengganti.',
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(14),
+          child: InputDecorator(
+            decoration: InputDecoration(
+                labelText: label,
+                prefixIcon: Icon(icon, size: 18),
+                suffixIcon: const Icon(Icons.search, size: 18),
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                isDense: true),
+            child: Text(place.name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.ink900)),
+          ),
+        ),
       );
 }
 

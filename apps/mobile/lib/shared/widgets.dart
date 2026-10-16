@@ -3,6 +3,8 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../core/theme/app_theme.dart';
+import '../features/route_planning/domain/models.dart';
+import 'air_map.dart';
 
 class PageHeader extends StatelessWidget {
   const PageHeader(
@@ -37,37 +39,20 @@ class PageHeader extends StatelessWidget {
       ]);
 }
 
-class DemoBanner extends StatelessWidget {
-  const DemoBanner({super.key});
-  @override
-  Widget build(BuildContext context) => Container(
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
-        color: AppColors.sun300,
-        child: const SafeArea(
-            bottom: false,
-            child: Text('MODE DEMO · DATA SIMULASI',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                    fontSize: 11,
-                    letterSpacing: .7,
-                    fontWeight: FontWeight.w900,
-                    color: AppColors.ink900))),
-      );
-}
-
 class QualityBadge extends StatelessWidget {
   const QualityBadge({super.key, required this.quality});
   final String quality;
   @override
   Widget build(BuildContext context) {
+    if (quality == 'synthetic') {
+      return const SizedBox.shrink();
+    }
     final label = switch (quality) {
       'real' => 'Data model',
       'approximated' => 'Data perkiraan',
-      _ => 'Data simulasi'
+      _ => 'Data tersedia'
     };
-    final color =
-        quality == 'synthetic' ? AppColors.sun300 : AppColors.brand100;
+    const color = AppColors.brand100;
     return Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         decoration: BoxDecoration(
@@ -318,72 +303,136 @@ class _HirupLogoPainter extends CustomPainter {
 }
 
 class AirMapCard extends StatelessWidget {
-  const AirMapCard({super.key, this.compact = false});
+  const AirMapCard({
+    super.key,
+    this.compact = false,
+    this.origin,
+    this.destination,
+    this.route,
+    this.highlightLeg,
+    this.interactive = true,
+  });
   final bool compact;
+  final PlacePoint? origin;
+  final PlacePoint? destination;
+  final RouteOption? route;
+  final int? highlightLeg;
+  final bool interactive;
+
   @override
-  Widget build(BuildContext context) => Semantics(
-        label:
-            'Peta interaktif belum tersedia. Ilustrasi ini tidak menunjukkan rute sebenarnya.',
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(24),
-          child: SizedBox(
-            height: compact ? 150 : 310,
-            width: double.infinity,
-            child: CustomPaint(
-              painter: _MapPainter(),
+  Widget build(BuildContext context) {
+    if (origin != null || destination != null || route != null) {
+      return Semantics(
+        label: route != null
+            ? 'Peta rute, warna garis menunjukkan estimasi PM2.5 per ruas.'
+            : 'Peta area pilot Jakarta dengan estimasi PM2.5.',
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(24),
+            child: Container(
+              height: compact ? 190 : 310,
+              width: double.infinity,
+              decoration: BoxDecoration(
+                  border: Border.all(color: AppColors.stroke),
+                  borderRadius: BorderRadius.circular(24)),
               child: Stack(children: [
+                Positioned.fill(
+                    child: AirMap(
+                        origin: origin,
+                        destination: destination,
+                        route: route,
+                        highlightLeg: highlightLeg,
+                        interactive: interactive)),
                 Positioned(
                     top: 13,
                     left: 13,
-                    child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 10, vertical: 6),
-                        decoration: BoxDecoration(
-                            color: AppColors.ink900,
-                            borderRadius: BorderRadius.circular(8)),
-                        child: const Text('JKT / AIR GRID 01',
-                            style: TextStyle(
-                                fontSize: 9,
-                                letterSpacing: .8,
-                                fontWeight: FontWeight.w900,
-                                color: AppColors.mint300)))),
-                Positioned(
-                    top: 14,
-                    right: 14,
-                    child: Container(
-                        width: 36,
-                        height: 36,
-                        decoration: BoxDecoration(
-                            color: AppColors.sun300,
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: AppColors.ink900)),
-                        child: const Icon(Icons.my_location,
-                            size: 18, color: AppColors.ink900))),
-                Positioned(
-                    bottom: 14,
-                    left: 14,
-                    right: 14,
-                    child: Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: .94),
-                            borderRadius: BorderRadius.circular(14)),
-                        child: const Row(children: [
-                          Icon(Icons.map_outlined, size: 20),
-                          SizedBox(width: 8),
-                          Expanded(
-                              child: Text(
-                                  'Peta interaktif belum tersedia · ilustrasi area',
-                                  style: TextStyle(
-                                      fontWeight: FontWeight.w700,
-                                      fontSize: 12,
-                                      color: AppColors.ink900)))
-                        ]))),
+                    child: IgnorePointer(
+                        child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 6),
+                            decoration: BoxDecoration(
+                                color: AppColors.ink900,
+                                borderRadius: BorderRadius.circular(8)),
+                            child: const Text('JKT / AIR GRID 01',
+                                style: TextStyle(
+                                    fontSize: 9,
+                                    letterSpacing: .8,
+                                    fontWeight: FontWeight.w900,
+                                    color: AppColors.mint300)))))
               ]),
             ),
           ),
-        ),
+          if (route != null)
+            const Padding(
+                padding: EdgeInsets.only(top: 8, left: 4), child: Pm25Legend()),
+        ]),
       );
+    }
+
+    return Semantics(
+      label:
+          'Peta interaktif belum tersedia. Ilustrasi ini tidak menunjukkan rute sebenarnya.',
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(24),
+        child: SizedBox(
+          height: compact ? 150 : 310,
+          width: double.infinity,
+          child: CustomPaint(
+            painter: _MapPainter(),
+            child: Stack(children: [
+              Positioned(
+                  top: 13,
+                  left: 13,
+                  child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                          color: AppColors.ink900,
+                          borderRadius: BorderRadius.circular(8)),
+                      child: const Text('JKT / AIR GRID 01',
+                          style: TextStyle(
+                              fontSize: 9,
+                              letterSpacing: .8,
+                              fontWeight: FontWeight.w900,
+                              color: AppColors.mint300)))),
+              Positioned(
+                  top: 14,
+                  right: 14,
+                  child: Container(
+                      width: 36,
+                      height: 36,
+                      decoration: BoxDecoration(
+                          color: AppColors.sun300,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: AppColors.ink900)),
+                      child: const Icon(Icons.my_location,
+                          size: 18, color: AppColors.ink900))),
+              Positioned(
+                  bottom: 14,
+                  left: 14,
+                  right: 14,
+                  child: Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: .94),
+                          borderRadius: BorderRadius.circular(14)),
+                      child: const Row(children: [
+                        Icon(Icons.map_outlined, size: 20),
+                        SizedBox(width: 8),
+                        Expanded(
+                            child: Text(
+                                'Peta interaktif belum tersedia · ilustrasi area',
+                                style: TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 12,
+                                    color: AppColors.ink900)))
+                      ]))),
+            ]),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class _MapPainter extends CustomPainter {

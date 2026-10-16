@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -177,152 +178,285 @@ class _JourneyPreferencesScreenState
   Widget build(BuildContext context) {
     final draft = ref.watch(journeyDraftProvider);
     return Scaffold(
-      appBar: const HirupAppBar(section: 'ATUR PERJALANAN', code: '05'),
       bottomNavigationBar: SafeArea(
         child: Container(
-          padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
+          padding: const EdgeInsets.fromLTRB(18, 10, 18, 12),
           decoration: const BoxDecoration(
             color: Colors.white,
             border: Border(top: BorderSide(color: AppColors.stroke)),
           ),
-          child: FilledButton(
-            onPressed: () {
-              ref.read(planProvider.notifier).load();
-              context.push('/plan/results');
-            },
-            child: const Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text('LIHAT PILIHAN RUTE'),
-                SizedBox(width: 9),
-                Icon(Icons.arrow_forward_rounded, size: 19),
-              ],
+          child: SizedBox(
+            height: 44,
+            child: FilledButton(
+              onPressed: () {
+                ref.read(planProvider.notifier).load();
+                context.push('/plan/results');
+              },
+              child: const Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text('LIHAT PILIHAN RUTE',
+                      style: TextStyle(fontSize: 10.5, letterSpacing: .55)),
+                  SizedBox(width: 9),
+                  Icon(Icons.arrow_forward_rounded, size: 18),
+                ],
+              ),
             ),
           ),
         ),
       ),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-        children: [
-          _ExpandedJourneyCard(draft: draft),
-          const SizedBox(height: 20),
-          AnimatedSlide(
-            duration: const Duration(milliseconds: 360),
-            curve: Curves.easeOutCubic,
-            offset: _revealed ? Offset.zero : const Offset(0, .07),
-            child: AnimatedOpacity(
-              duration: const Duration(milliseconds: 300),
-              opacity: _revealed ? 1 : 0,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Pilih moda perjalanan',
-                      style: Theme.of(context)
-                          .textTheme
-                          .titleLarge
-                          ?.copyWith(fontSize: 19)),
-                  const SizedBox(height: 4),
-                  const Text(
-                    'Estimasi mempertimbangkan udara, waktu, dan profilmu.',
-                    style: TextStyle(fontSize: 11, color: AppColors.ink600),
-                  ),
-                  const SizedBox(height: 13),
-                  _ModeChoice(
-                    mode: PlanMode.all,
-                    selected: draft.mode == PlanMode.all,
-                    icon: Icons.auto_awesome_rounded,
-                    title: 'Semua opsi',
-                    subtitle: 'Bandingkan semua moda untuk rute terbaik.',
-                    badge: 'Direkomendasikan',
-                    onTap: () => ref
-                        .read(journeyDraftProvider.notifier)
-                        .setMode(PlanMode.all),
-                  ),
-                  _ModeChoice(
-                    mode: PlanMode.transit,
-                    selected: draft.mode == PlanMode.transit,
-                    icon: Icons.directions_transit_rounded,
-                    title: 'Transit publik',
-                    subtitle: 'MRT, LRT, dan TransJakarta.',
-                    badge: 'Lebih rendah emisi',
-                    onTap: () => ref
-                        .read(journeyDraftProvider.notifier)
-                        .setMode(PlanMode.transit),
-                  ),
-                  _ModeChoice(
-                    mode: PlanMode.bike,
-                    selected: draft.mode == PlanMode.bike,
-                    icon: Icons.pedal_bike_rounded,
-                    title: 'Sepeda',
-                    subtitle: 'Aktif untuk perjalanan yang lebih dekat.',
-                    onTap: () => ref
-                        .read(journeyDraftProvider.notifier)
-                        .setMode(PlanMode.bike),
-                  ),
-                  _ModeChoice(
-                    mode: PlanMode.walk,
-                    selected: draft.mode == PlanMode.walk,
-                    icon: Icons.directions_walk_rounded,
-                    title: 'Jalan kaki',
-                    subtitle: 'Pilihan sehat untuk jarak pendek.',
-                    onTap: () => ref
-                        .read(journeyDraftProvider.notifier)
-                        .setMode(PlanMode.walk),
-                  ),
-                  const SizedBox(height: 3),
-                  _ComparisonToggle(
-                    value: draft.includeComparison,
-                    onChanged: (value) => ref
-                        .read(journeyDraftProvider.notifier)
-                        .setIncludeComparison(value),
-                  ),
-                  const SizedBox(height: 18),
-                  Row(children: [
-                    Expanded(
-                      child: Text('Preferensi rute',
-                          style: Theme.of(context)
-                              .textTheme
-                              .titleMedium
-                              ?.copyWith(fontSize: 16)),
-                    ),
-                    Text(
-                        '${(draft.maxWalkM / 1000).toStringAsFixed(draft.maxWalkM % 1000 == 0 ? 0 : 1)} km jalan',
-                        style: const TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.w800,
-                            color: AppColors.brand600)),
-                  ]),
-                  const SizedBox(height: 10),
-                  _PreferencePanel(draft: draft, ref: ref),
-                  const SizedBox(height: 14),
-                  Container(
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      color: AppColors.surfaceSky,
-                      borderRadius: BorderRadius.circular(18),
-                      border: Border.all(color: AppColors.stroke),
-                    ),
-                    child: const Row(children: [
-                      Icon(Icons.health_and_safety_outlined,
-                          size: 20, color: AppColors.sky700),
-                      SizedBox(width: 11),
-                      Expanded(
-                        child: Text(
-                          'Rute Bersih Berbasis Sensor membandingkan estimasi paparan, bukan hanya jarak.',
-                          style: TextStyle(
-                              fontSize: 10.5, color: AppColors.ink700),
-                        ),
+      body: CustomScrollView(
+        slivers: [
+          SliverToBoxAdapter(child: _RouteSetupHero(onBack: context.pop)),
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(18, 18, 18, 26),
+            sliver: SliverList.list(children: [
+              _ExpandedJourneyCard(draft: draft),
+              const SizedBox(height: 22),
+              AnimatedSlide(
+                duration: const Duration(milliseconds: 360),
+                curve: Curves.easeOutCubic,
+                offset: _revealed ? Offset.zero : const Offset(0, .07),
+                child: AnimatedOpacity(
+                  duration: const Duration(milliseconds: 300),
+                  opacity: _revealed ? 1 : 0,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const _PlanningSectionLabel(
+                          label: 'PILIH MODA', code: '04 OPSI'),
+                      const SizedBox(height: 8),
+                      const Text(
+                        'Kami membandingkan kualitas udara dan waktu perjalanan.',
+                        style: TextStyle(fontSize: 10, color: AppColors.ink600),
                       ),
-                    ]),
+                      const SizedBox(height: 13),
+                      _ModeChoice(
+                        mode: PlanMode.all,
+                        selected: draft.mode == PlanMode.all,
+                        icon: Icons.auto_awesome_rounded,
+                        title: 'Semua opsi',
+                        subtitle: 'Bandingkan semua moda untuk rute terbaik.',
+                        badge: 'Direkomendasikan',
+                        onTap: () => ref
+                            .read(journeyDraftProvider.notifier)
+                            .setMode(PlanMode.all),
+                      ),
+                      _ModeChoice(
+                        mode: PlanMode.transit,
+                        selected: draft.mode == PlanMode.transit,
+                        icon: Icons.directions_transit_rounded,
+                        title: 'Transit publik',
+                        subtitle: 'MRT, LRT, dan TransJakarta.',
+                        badge: 'Lebih rendah emisi',
+                        onTap: () => ref
+                            .read(journeyDraftProvider.notifier)
+                            .setMode(PlanMode.transit),
+                      ),
+                      _ModeChoice(
+                        mode: PlanMode.bike,
+                        selected: draft.mode == PlanMode.bike,
+                        icon: Icons.pedal_bike_rounded,
+                        title: 'Sepeda',
+                        subtitle: 'Aktif untuk perjalanan yang lebih dekat.',
+                        onTap: () => ref
+                            .read(journeyDraftProvider.notifier)
+                            .setMode(PlanMode.bike),
+                      ),
+                      _ModeChoice(
+                        mode: PlanMode.walk,
+                        selected: draft.mode == PlanMode.walk,
+                        icon: Icons.directions_walk_rounded,
+                        title: 'Jalan kaki',
+                        subtitle: 'Pilihan sehat untuk jarak pendek.',
+                        onTap: () => ref
+                            .read(journeyDraftProvider.notifier)
+                            .setMode(PlanMode.walk),
+                      ),
+                      const SizedBox(height: 3),
+                      _ComparisonToggle(
+                        value: draft.includeComparison,
+                        onChanged: (value) => ref
+                            .read(journeyDraftProvider.notifier)
+                            .setIncludeComparison(value),
+                      ),
+                      const SizedBox(height: 14),
+                      Container(
+                        padding: const EdgeInsets.all(13),
+                        decoration: BoxDecoration(
+                          color: AppColors.surfaceSky,
+                          borderRadius: BorderRadius.circular(15),
+                          border: Border.all(color: AppColors.stroke),
+                        ),
+                        child: const Row(children: [
+                          Icon(Icons.health_and_safety_outlined,
+                              size: 18, color: AppColors.sky700),
+                          SizedBox(width: 9),
+                          Expanded(
+                            child: Text(
+                              'Rute diperingkat berdasarkan estimasi paparan, bukan hanya jarak.',
+                              style: TextStyle(
+                                  fontSize: 9.5, color: AppColors.ink700),
+                            ),
+                          ),
+                        ]),
+                      ),
+                    ],
                   ),
-                ],
+                ),
               ),
-            ),
+            ]),
           ),
         ],
       ),
     );
   }
+}
+
+class _RouteSetupHero extends StatelessWidget {
+  const _RouteSetupHero({required this.onBack});
+
+  final VoidCallback onBack;
+
+  @override
+  Widget build(BuildContext context) => ClipRRect(
+        borderRadius: const BorderRadius.vertical(bottom: Radius.circular(28)),
+        child: SizedBox(
+          height: 196,
+          child: Stack(fit: StackFit.expand, children: [
+            Image.asset('assets/images/air-moderate.png',
+                fit: BoxFit.cover,
+                alignment: const Alignment(.45, .1),
+                cacheWidth: 850,
+                filterQuality: FilterQuality.low),
+            const DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    Color(0xF2073C3B),
+                    Color(0xB307665B),
+                    Color(0xE807302F),
+                  ],
+                ),
+              ),
+            ),
+            Positioned(
+              right: -20,
+              bottom: -35,
+              child: Container(
+                width: 135,
+                height: 135,
+                decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white12, width: 18)),
+              ),
+            ),
+            SafeArea(
+              bottom: false,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(14, 10, 18, 18),
+                child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Stack(alignment: Alignment.center, children: [
+                        const Center(
+                          child: Row(mainAxisSize: MainAxisSize.min, children: [
+                            HirupLogoMark(size: 26, dark: false),
+                            SizedBox(width: 7),
+                            Text('hirup.',
+                                style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 17,
+                                    height: 1,
+                                    letterSpacing: -.4,
+                                    fontWeight: FontWeight.w900)),
+                          ]),
+                        ),
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: Material(
+                            color: Colors.white.withValues(alpha: .13),
+                            shape: const CircleBorder(
+                                side: BorderSide(color: Colors.white30)),
+                            child: InkWell(
+                              customBorder: const CircleBorder(),
+                              onTap: onBack,
+                              child: const SizedBox(
+                                  width: 36,
+                                  height: 36,
+                                  child: Icon(Icons.arrow_back_rounded,
+                                      size: 19, color: Colors.white)),
+                            ),
+                          ),
+                        ),
+                      ]),
+                      const Spacer(),
+                      const Row(children: [
+                        Icon(Icons.route_rounded,
+                            size: 14, color: AppColors.mint300),
+                        SizedBox(width: 6),
+                        Text('LANGKAH 03  ·  RUTE + UDARA',
+                            style: TextStyle(
+                                color: AppColors.mint300,
+                                fontSize: 8,
+                                letterSpacing: 1,
+                                fontWeight: FontWeight.w900)),
+                      ]),
+                      const SizedBox(height: 6),
+                      const Text('Pilih cara bergerak.',
+                          style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 20,
+                              height: 1,
+                              letterSpacing: -.25,
+                              fontWeight: FontWeight.w900)),
+                      const SizedBox(height: 7),
+                      Text(
+                          'Satu tujuan, beberapa cara dengan paparan yang berbeda.',
+                          style: TextStyle(
+                              color: Colors.white.withValues(alpha: .72),
+                              fontSize: 10,
+                              height: 1.3)),
+                    ]),
+              ),
+            ),
+          ]),
+        ),
+      );
+}
+
+class _PlanningSectionLabel extends StatelessWidget {
+  const _PlanningSectionLabel({required this.label, required this.code});
+
+  final String label;
+  final String code;
+
+  @override
+  Widget build(BuildContext context) => Row(children: [
+        Text(label,
+            style: const TextStyle(
+                fontSize: 9,
+                letterSpacing: .85,
+                fontWeight: FontWeight.w900,
+                color: AppColors.ink900)),
+        const SizedBox(width: 8),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+          decoration: BoxDecoration(
+              color: AppColors.mint300,
+              borderRadius: BorderRadius.circular(99),
+              border: Border.all(color: AppColors.ink900)),
+          child: Text(code,
+              style: const TextStyle(
+                  fontSize: 7.5,
+                  fontWeight: FontWeight.w900,
+                  color: AppColors.ink900)),
+        ),
+        const SizedBox(width: 8),
+        const Expanded(child: Divider()),
+      ]);
 }
 
 class _ExpandedJourneyCard extends StatelessWidget {
@@ -599,138 +733,278 @@ class _ComparisonToggle extends StatelessWidget {
       );
 }
 
-class _PreferencePanel extends StatelessWidget {
-  const _PreferencePanel({required this.draft, required this.ref});
-  final JourneyDraft draft;
-  final WidgetRef ref;
-
-  @override
-  Widget build(BuildContext context) => Container(
-        padding: const EdgeInsets.all(13),
-        decoration: BoxDecoration(
-          color: AppColors.surfaceMint,
-          borderRadius: BorderRadius.circular(19),
-          border: Border.all(color: AppColors.brand100),
-        ),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          const Text('PROFIL PAPARAN',
-              style: TextStyle(
-                  fontSize: 8,
-                  letterSpacing: .8,
-                  color: AppColors.brand600,
-                  fontWeight: FontWeight.w900)),
-          const SizedBox(height: 8),
-          SegmentedButton<Sensitivity>(
-            showSelectedIcon: false,
-            segments: const [
-              ButtonSegment(value: Sensitivity.umum, label: Text('Umum')),
-              ButtonSegment(
-                  value: Sensitivity.rentan, label: Text('Lebih sensitif')),
-            ],
-            selected: {draft.sensitivity},
-            onSelectionChanged: (selection) => ref
-                .read(journeyDraftProvider.notifier)
-                .setSensitivity(selection.first),
-          ),
-          const SizedBox(height: 13),
-          const Text('BATAS JALAN KAKI',
-              style: TextStyle(
-                  fontSize: 8,
-                  letterSpacing: .8,
-                  color: AppColors.brand600,
-                  fontWeight: FontWeight.w900)),
-          const SizedBox(height: 7),
-          Wrap(
-            spacing: 7,
-            children: [500, 1000, 1500]
-                .map((meters) => ChoiceChip(
-                      label: Text(meters < 1000
-                          ? '$meters m'
-                          : '${meters ~/ 1000}${meters == 1500 ? ',5' : ''} km'),
-                      selected: draft.maxWalkM == meters,
-                      onSelected: (_) => ref
-                          .read(journeyDraftProvider.notifier)
-                          .setMaxWalk(meters),
-                    ))
-                .toList(),
-          ),
-        ]),
-      );
-}
-
 class ResultsScreen extends ConsumerWidget {
   const ResultsScreen({super.key});
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final draft = ref.watch(journeyDraftProvider);
     final state = ref.watch(planProvider);
-    return Scaffold(
-        appBar: const HirupAppBar(section: 'PILIHAN RUTE', code: '06'),
-        body: state.when(
-          loading: () => const _PlanningLoader(),
-          error: (error, _) =>
-              ListView(padding: const EdgeInsets.all(20), children: [
-            const SizedBox(height: 100),
-            ErrorPanel(
-                message: error.toString(),
-                onRetry: ref.read(planProvider.notifier).load)
-          ]),
-          data: (result) {
-            if (result == null)
-              return Center(
-                  child: FilledButton(
-                      onPressed: ref.read(planProvider.notifier).load,
-                      child: const Text('Muat pilihan rute')));
-            return Column(children: [
-              if (result.isDemo) const DemoBanner(),
-              Expanded(
-                  child: ListView(
-                      padding: const EdgeInsets.fromLTRB(20, 12, 20, 36),
-                      children: [
-                    _JourneyCapsule(draft: draft),
-                    const SizedBox(height: 14),
-                    const AirMapCard(compact: true),
-                    const SizedBox(height: 24),
-                    const PageHeader(
-                        eyebrow: 'Hasil perjalanan',
-                        title: 'Pilih perjalanan yang paling pas.',
-                        subtitle:
-                            'Bandingkan udara yang dihirup dan menit yang dibutuhkan.'),
-                    const SizedBox(height: 18),
-                    Row(children: [
-                      QualityBadge(quality: result.dataQuality),
-                      const SizedBox(width: 8),
-                      Text(
-                          '${formatTime(result.freshness.validHour)} · ${result.freshness.confidence}',
-                          style: const TextStyle(
-                              fontSize: 12, color: AppColors.ink600))
-                    ]),
-                    const SizedBox(height: 16),
-                    ...result.options.asMap().entries.map((entry) => Padding(
-                        padding: const EdgeInsets.only(bottom: 16),
-                        child: _RouteCard(
-                            index: entry.key + 1,
-                            option: entry.value,
-                            onTap: () {
-                              ref.read(selectedRouteIdProvider.notifier).state =
-                                  entry.value.id;
-                              context.push('/plan/detail/${entry.value.id}');
-                            }))),
-                    _ComparisonSection(
-                        motorcycle: result.motorcycle, car: result.car),
-                    const SizedBox(height: 18),
-                    Text(result.disclaimer,
-                        style: const TextStyle(
-                            fontSize: 12, color: AppColors.ink600)),
-                  ])),
-            ]);
-          },
-        ));
+    final air = ref.watch(airPointProvider);
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+        value: SystemUiOverlayStyle.light,
+        child: Scaffold(
+            body: Column(children: [
+          _ResultsHero(draft: draft, air: air, onBack: context.pop),
+          Expanded(
+              child: state.when(
+                  loading: () => const _RoutePlanningLoader(),
+                  error: (error, _) =>
+                      ListView(padding: const EdgeInsets.all(20), children: [
+                        const SizedBox(height: 100),
+                        ErrorPanel(
+                            message: error.toString(),
+                            onRetry: ref.read(planProvider.notifier).load)
+                      ]),
+                  data: (result) {
+                    if (result == null) {
+                      return Center(
+                          child: FilledButton(
+                              onPressed: ref.read(planProvider.notifier).load,
+                              child: const Text('Muat pilihan rute')));
+                    }
+                    return Column(children: [
+                      Expanded(
+                          child: ListView(
+                              padding:
+                                  const EdgeInsets.fromLTRB(20, 18, 20, 36),
+                              children: [
+                            _JourneyCapsule(draft: draft),
+                            const SizedBox(height: 16),
+                            AirMapCard(
+                                compact: true,
+                                interactive: false,
+                                origin: draft.origin,
+                                destination: draft.destination,
+                                route: result.options.isEmpty
+                                    ? null
+                                    : result.options.first),
+                            const SizedBox(height: 24),
+                            _ResultsSectionLabel(count: result.options.length),
+                            const SizedBox(height: 7),
+                            Row(children: [
+                              if (!result.isDemo) ...[
+                                QualityBadge(quality: result.dataQuality),
+                                const SizedBox(width: 8),
+                              ],
+                              Text(
+                                  '${formatTime(result.freshness.validHour)} · ${result.freshness.confidence}',
+                                  style: const TextStyle(
+                                      fontSize: 10, color: AppColors.ink600))
+                            ]),
+                            const SizedBox(height: 13),
+                            ...result.options
+                                .asMap()
+                                .entries
+                                .map((entry) => Padding(
+                                    padding: const EdgeInsets.only(bottom: 12),
+                                    child: _RouteCard(
+                                        index: entry.key + 1,
+                                        option: entry.value,
+                                        onTap: () {
+                                          ref
+                                              .read(selectedRouteIdProvider
+                                                  .notifier)
+                                              .state = entry.value.id;
+                                          context.push(
+                                              '/plan/detail/${entry.value.id}');
+                                        }))),
+                            _ComparisonSection(
+                                motorcycle: result.motorcycle, car: result.car),
+                            const SizedBox(height: 18),
+                            Text(result.disclaimer,
+                                style: const TextStyle(
+                                    fontSize: 12, color: AppColors.ink600)),
+                          ])),
+                    ]);
+                  })),
+        ])));
   }
 }
 
-class _PlanningLoader extends StatelessWidget {
-  const _PlanningLoader();
+class _ResultsHero extends StatelessWidget {
+  const _ResultsHero(
+      {required this.draft, required this.air, required this.onBack});
+  final JourneyDraft draft;
+  final AsyncValue<AirPoint> air;
+  final VoidCallback onBack;
+
+  String _asset(double pm25) {
+    if (pm25 <= 15.5) return 'assets/images/air-good.png';
+    if (pm25 <= 55.4) return 'assets/images/air-moderate.png';
+    return 'assets/images/air-unhealthy.png';
+  }
+
+  @override
+  Widget build(BuildContext context) => ClipRRect(
+        borderRadius: const BorderRadius.vertical(bottom: Radius.circular(28)),
+        child: SizedBox(
+          height: 238,
+          child: Stack(fit: StackFit.expand, children: [
+            Image.asset(_asset(air.valueOrNull?.p50 ?? 30),
+                fit: BoxFit.cover,
+                alignment: const Alignment(.35, .15),
+                cacheWidth: 850,
+                filterQuality: FilterQuality.low),
+            const DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    Color(0xF2073C3B),
+                    Color(0xA8076B60),
+                    Color(0xF007302F),
+                  ],
+                ),
+              ),
+            ),
+            SafeArea(
+              bottom: false,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(18, 12, 18, 18),
+                child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Stack(alignment: Alignment.center, children: [
+                        const Center(
+                          child: Row(mainAxisSize: MainAxisSize.min, children: [
+                            HirupLogoMark(size: 26, dark: false),
+                            SizedBox(width: 7),
+                            Text('hirup.',
+                                style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 17,
+                                    height: 1,
+                                    letterSpacing: -.4,
+                                    fontWeight: FontWeight.w900)),
+                          ]),
+                        ),
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: Material(
+                            color: Colors.white.withValues(alpha: .13),
+                            shape: const CircleBorder(
+                                side: BorderSide(color: Colors.white30)),
+                            child: InkWell(
+                              customBorder: const CircleBorder(),
+                              onTap: onBack,
+                              child: const SizedBox(
+                                  width: 36,
+                                  height: 36,
+                                  child: Icon(Icons.arrow_back_rounded,
+                                      size: 19, color: Colors.white)),
+                            ),
+                          ),
+                        ),
+                      ]),
+                      const Spacer(),
+                      Container(
+                        padding: const EdgeInsets.fromLTRB(15, 13, 14, 13),
+                        decoration: BoxDecoration(
+                          color: const Color(0xE6103F3C),
+                          borderRadius: BorderRadius.circular(18),
+                          border: Border.all(color: Colors.white24),
+                          boxShadow: const [
+                            BoxShadow(
+                                color: Color(0x3D001F1D),
+                                blurRadius: 16,
+                                offset: Offset(0, 7))
+                          ],
+                        ),
+                        child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Row(children: [
+                                Icon(Icons.route_rounded,
+                                    size: 14, color: AppColors.mint300),
+                                SizedBox(width: 7),
+                                Text('HASIL PERJALANAN',
+                                    style: TextStyle(
+                                        color: AppColors.mint300,
+                                        fontSize: 9,
+                                        letterSpacing: .9,
+                                        fontWeight: FontWeight.w900)),
+                              ]),
+                              const SizedBox(height: 7),
+                              const Text('Pilih napas terbaik.',
+                                  style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 19,
+                                      height: 1,
+                                      letterSpacing: -.2,
+                                      fontWeight: FontWeight.w900)),
+                              const SizedBox(height: 10),
+                              Row(children: [
+                                const Icon(Icons.trip_origin_rounded,
+                                    size: 12, color: AppColors.sun300),
+                                const SizedBox(width: 5),
+                                Expanded(
+                                    child: Text(draft.origin.name,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(
+                                            color: Colors.white70,
+                                            fontSize: 10))),
+                                const Padding(
+                                  padding: EdgeInsets.symmetric(horizontal: 7),
+                                  child: Icon(Icons.arrow_forward_rounded,
+                                      size: 13, color: AppColors.mint300),
+                                ),
+                                Expanded(
+                                    child: Text(draft.destination.name,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        textAlign: TextAlign.right,
+                                        style: const TextStyle(
+                                            color: Colors.white70,
+                                            fontSize: 10))),
+                              ]),
+                            ]),
+                      ),
+                    ]),
+              ),
+            ),
+          ]),
+        ),
+      );
+}
+
+class _ResultsSectionLabel extends StatelessWidget {
+  const _ResultsSectionLabel({required this.count});
+  final int count;
+
+  @override
+  Widget build(BuildContext context) => Row(children: [
+        const Expanded(
+          child:
+              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('Pilihan rute',
+                style: TextStyle(
+                    fontSize: 16,
+                    height: 1.15,
+                    fontWeight: FontWeight.w900,
+                    color: AppColors.ink900)),
+            SizedBox(height: 3),
+            Text('Urutkan waktu dan paparan sesuai kebutuhanmu.',
+                style: TextStyle(fontSize: 10, color: AppColors.ink600)),
+          ]),
+        ),
+        const SizedBox(width: 8),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+          decoration: BoxDecoration(
+              color: AppColors.mint300,
+              borderRadius: BorderRadius.circular(99),
+              border: Border.all(color: AppColors.ink900)),
+          child: Text(count.toString().padLeft(2, '0'),
+              style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w900)),
+        ),
+      ]);
+}
+
+// ignore: unused_element
+class _LegacyPlanningLoader extends StatelessWidget {
+  const _LegacyPlanningLoader();
   @override
   Widget build(BuildContext context) => Center(
       child: Padding(
@@ -746,29 +1020,157 @@ class _PlanningLoader extends StatelessWidget {
           ])));
 }
 
+class _RoutePlanningLoader extends StatefulWidget {
+  const _RoutePlanningLoader();
+
+  @override
+  State<_RoutePlanningLoader> createState() => _RoutePlanningLoaderState();
+}
+
+class _RoutePlanningLoaderState extends State<_RoutePlanningLoader>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 1500))
+      ..repeat();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => Center(
+        child: AnimatedBuilder(
+          animation: _controller,
+          builder: (_, __) => CustomPaint(
+            size: const Size(190, 120),
+            painter: _RouteLoaderPainter(_controller.value),
+          ),
+        ),
+      );
+}
+
+class _RouteLoaderPainter extends CustomPainter {
+  const _RouteLoaderPainter(this.progress);
+  final double progress;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final frame =
+        RRect.fromRectAndRadius(Offset.zero & size, const Radius.circular(24));
+    canvas.drawRRect(frame, Paint()..color = Colors.white);
+    canvas.drawRRect(
+        frame,
+        Paint()
+          ..color = AppColors.ink900
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.2);
+    final paths = <(Path, Color)>[
+      (
+        Path()
+          ..moveTo(18, 88)
+          ..cubicTo(58, 89, 62, 25, 112, 37)
+          ..cubicTo(142, 44, 150, 83, 174, 69),
+        AppColors.mint300
+      ),
+      (
+        Path()
+          ..moveTo(18, 73)
+          ..cubicTo(55, 54, 72, 78, 102, 68)
+          ..cubicTo(135, 57, 146, 31, 174, 42),
+        AppColors.sun300
+      ),
+      (
+        Path()
+          ..moveTo(18, 48)
+          ..cubicTo(49, 25, 76, 43, 94, 54)
+          ..cubicTo(125, 76, 147, 94, 174, 90),
+        AppColors.sky300
+      ),
+    ];
+    for (var i = 0; i < paths.length; i++) {
+      final path = paths[i].$1;
+      final color = paths[i].$2;
+      canvas.drawPath(
+          path,
+          Paint()
+            ..color = color.withValues(alpha: .35)
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 5
+            ..strokeCap = StrokeCap.round);
+      final metric = path.computeMetrics().first;
+      final shifted = (progress + i * .24) % 1;
+      final point = metric.getTangentForOffset(metric.length * shifted);
+      if (point != null) {
+        canvas.drawCircle(point.position, 5, Paint()..color = color);
+        canvas.drawCircle(
+            point.position,
+            5,
+            Paint()
+              ..color = AppColors.ink900
+              ..style = PaintingStyle.stroke
+              ..strokeWidth = 1.2);
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _RouteLoaderPainter oldDelegate) =>
+      oldDelegate.progress != progress;
+}
+
 class _JourneyCapsule extends StatelessWidget {
   const _JourneyCapsule({required this.draft});
   final JourneyDraft draft;
   @override
   Widget build(BuildContext context) => Container(
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.fromLTRB(13, 11, 13, 11),
       decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: AppColors.stroke)),
+          borderRadius: const BorderRadius.only(
+              topLeft: Radius.circular(20),
+              topRight: Radius.circular(8),
+              bottomLeft: Radius.circular(8),
+              bottomRight: Radius.circular(20)),
+          border: Border.all(color: AppColors.ink900, width: 1.1)),
       child: Row(children: [
-        const Icon(Icons.trip_origin, size: 18, color: AppColors.brand600),
-        const SizedBox(width: 8),
-        Expanded(
-            child: Text(draft.origin.name, overflow: TextOverflow.ellipsis)),
-        const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 8),
-            child: Icon(Icons.arrow_forward, size: 18)),
-        const Icon(Icons.location_on, size: 18, color: AppColors.brand600),
-        const SizedBox(width: 6),
+        Container(
+            width: 30,
+            height: 30,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+                color: AppColors.sun300,
+                borderRadius: BorderRadius.circular(9),
+                border: Border.all(color: AppColors.ink900)),
+            child: const Icon(Icons.route_rounded,
+                size: 16, color: AppColors.ink900)),
+        const SizedBox(width: 10),
         Expanded(
             child:
-                Text(draft.destination.name, overflow: TextOverflow.ellipsis)),
+                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(draft.origin.name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.ink900)),
+          const SizedBox(height: 2),
+          Text(draft.destination.name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 10, color: AppColors.ink600)),
+        ])),
+        const SizedBox(width: 8),
+        const Icon(Icons.arrow_forward_rounded,
+            size: 17, color: AppColors.brand600),
       ]));
 }
 
@@ -801,112 +1203,146 @@ class _RouteCard extends StatelessWidget {
         child: Container(
           decoration: BoxDecoration(
               color: Colors.white,
-              borderRadius: BorderRadius.circular(22),
+              borderRadius: const BorderRadius.only(
+                  topLeft: Radius.circular(22),
+                  topRight: Radius.circular(8),
+                  bottomLeft: Radius.circular(8),
+                  bottomRight: Radius.circular(22)),
               border: Border.all(color: AppColors.ink900, width: 1.2),
               boxShadow: const [
-                BoxShadow(color: Color(0x16073C3B), offset: Offset(4, 5))
+                BoxShadow(color: Color(0x16073C3B), offset: Offset(4, 4))
               ]),
           child: InkWell(
-              borderRadius: BorderRadius.circular(22),
+              borderRadius: const BorderRadius.only(
+                  topLeft: Radius.circular(22),
+                  topRight: Radius.circular(8),
+                  bottomLeft: Radius.circular(8),
+                  bottomRight: Radius.circular(22)),
               onTap: onTap,
               child: Column(children: [
                 Container(
-                    padding: const EdgeInsets.fromLTRB(16, 12, 12, 12),
+                    height: 5,
                     decoration: BoxDecoration(
                         color: accent,
-                        borderRadius: const BorderRadius.vertical(
-                            top: Radius.circular(21))),
-                    child: Row(children: [
-                      Text('0$index',
-                          style: const TextStyle(
-                              fontSize: 30,
-                              height: 1,
-                              fontWeight: FontWeight.w900,
-                              color: AppColors.ink900)),
-                      const SizedBox(width: 12),
-                      Expanded(
-                          child: Wrap(
-                              spacing: 6,
-                              runSpacing: 6,
-                              children: option.labels
-                                  .map((e) => Text(label(e).toUpperCase(),
-                                      style: const TextStyle(
-                                          fontSize: 11,
-                                          letterSpacing: .7,
-                                          fontWeight: FontWeight.w900,
-                                          color: AppColors.ink900)))
-                                  .toList())),
-                      const Icon(Icons.arrow_outward, color: AppColors.ink900),
-                    ])),
+                        borderRadius: const BorderRadius.only(
+                            topLeft: Radius.circular(20),
+                            topRight: Radius.circular(7)))),
                 Padding(
-                    padding: const EdgeInsets.all(17),
+                    padding: const EdgeInsets.fromLTRB(13, 12, 13, 13),
                     child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Row(
-                              crossAxisAlignment: CrossAxisAlignment.end,
-                              children: [
-                                Expanded(
-                                    child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                      const Text('WAKTU',
-                                          style: TextStyle(
-                                              fontSize: 10,
-                                              letterSpacing: .8,
-                                              fontWeight: FontWeight.w800,
-                                              color: AppColors.ink600)),
-                                      Text(formatDuration(option.durationS),
-                                          style: const TextStyle(
-                                              fontSize: 28,
-                                              fontWeight: FontWeight.w900,
-                                              color: AppColors.ink900))
-                                    ])),
-                                Container(
-                                    width: 1,
-                                    height: 44,
-                                    color: AppColors.stroke),
-                                const SizedBox(width: 16),
-                                Expanded(
-                                    child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                      const Text('ESTIMASI DOSIS',
-                                          style: TextStyle(
-                                              fontSize: 10,
-                                              letterSpacing: .8,
-                                              fontWeight: FontWeight.w800,
-                                              color: AppColors.ink600)),
-                                      Text(formatDose(option.doseUg),
-                                          style: const TextStyle(
-                                              fontSize: 22,
-                                              fontWeight: FontWeight.w900,
-                                              color: AppColors.brand600))
-                                    ]))
-                              ]),
-                          const SizedBox(height: 13),
+                          Row(children: [
+                            Container(
+                              width: 32,
+                              height: 32,
+                              alignment: Alignment.center,
+                              decoration: BoxDecoration(
+                                  color: accent,
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: Border.all(color: AppColors.ink900)),
+                              child: Text('0$index',
+                                  style: const TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w900,
+                                      color: AppColors.ink900)),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                                child: Wrap(
+                                    spacing: 6,
+                                    runSpacing: 4,
+                                    children: option.labels
+                                        .map((e) => Text(label(e),
+                                            style: const TextStyle(
+                                                fontSize: 12,
+                                                fontWeight: FontWeight.w900,
+                                                color: AppColors.ink900)))
+                                        .toList())),
+                            Container(
+                              width: 30,
+                              height: 30,
+                              decoration: const BoxDecoration(
+                                  color: AppColors.brand900,
+                                  shape: BoxShape.circle),
+                              child: const Icon(Icons.arrow_outward_rounded,
+                                  size: 15, color: AppColors.mint300),
+                            ),
+                          ]),
+                          const SizedBox(height: 12),
+                          Container(
+                            padding: const EdgeInsets.all(11),
+                            decoration: BoxDecoration(
+                                color: AppColors.surfaceMint,
+                                borderRadius: BorderRadius.circular(14)),
+                            child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.end,
+                                children: [
+                                  Expanded(
+                                      child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                        const Text('WAKTU',
+                                            style: TextStyle(
+                                                fontSize: 8,
+                                                letterSpacing: .8,
+                                                fontWeight: FontWeight.w800,
+                                                color: AppColors.ink600)),
+                                        const SizedBox(height: 2),
+                                        Text(formatDuration(option.durationS),
+                                            style: const TextStyle(
+                                                fontSize: 18,
+                                                fontWeight: FontWeight.w900,
+                                                color: AppColors.ink900))
+                                      ])),
+                                  Container(
+                                      width: 1,
+                                      height: 34,
+                                      color: AppColors.stroke),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                      child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                        const Text('ESTIMASI DOSIS',
+                                            style: TextStyle(
+                                                fontSize: 8,
+                                                letterSpacing: .8,
+                                                fontWeight: FontWeight.w800,
+                                                color: AppColors.ink600)),
+                                        const SizedBox(height: 2),
+                                        Text(formatDose(option.doseUg),
+                                            style: const TextStyle(
+                                                fontSize: 15,
+                                                fontWeight: FontWeight.w900,
+                                                color: AppColors.brand600))
+                                      ]))
+                                ]),
+                          ),
+                          const SizedBox(height: 11),
                           Text(
                               '$reduction · ${option.deltaDurationS > 0 ? '+${formatDuration(option.deltaDurationS)}' : 'tanpa tambahan waktu'}',
                               style: const TextStyle(
+                                  fontSize: 10.5,
                                   fontWeight: FontWeight.w800,
                                   color: AppColors.ink900)),
-                          const SizedBox(height: 12),
+                          const SizedBox(height: 9),
                           ClipRRect(
                               borderRadius: BorderRadius.circular(8),
                               child: LinearProgressIndicator(
-                                  minHeight: 7,
+                                  minHeight: 5,
                                   value: (option.doseUg / 35)
                                       .clamp(0, 1)
                                       .toDouble(),
                                   backgroundColor: AppColors.stroke,
                                   color: AppColors.brand600)),
-                          const SizedBox(height: 9),
+                          const SizedBox(height: 7),
                           Text(
                               'Rentang ${formatDose(option.doseP10)}–${formatDose(option.doseP90)} · ${option.transfers} transit',
                               style: const TextStyle(
-                                  fontSize: 12, color: AppColors.ink600)),
+                                  fontSize: 9.5, color: AppColors.ink600)),
                         ])),
               ])),
         ));
@@ -921,17 +1357,32 @@ class _ComparisonSection extends StatelessWidget {
   Widget build(BuildContext context) =>
       Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         const SizedBox(height: 10),
-        Text('Pembanding kendaraan pribadi',
-            style: Theme.of(context).textTheme.titleMedium),
+        const Row(children: [
+          Text('PEMBANDING PRIBADI',
+              style: TextStyle(
+                  fontSize: 9, letterSpacing: .8, fontWeight: FontWeight.w900)),
+          SizedBox(width: 8),
+          Expanded(child: Divider()),
+        ]),
         const SizedBox(height: 10),
-        Card(
+        Container(
+            decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: const BorderRadius.only(
+                    topLeft: Radius.circular(20),
+                    topRight: Radius.circular(8),
+                    bottomLeft: Radius.circular(8),
+                    bottomRight: Radius.circular(20)),
+                border: Border.all(color: AppColors.stroke)),
             child: Column(children: [
-          _VehicleRow(
-              icon: Icons.two_wheeler, name: 'Motor', value: motorcycle),
-          const Divider(height: 1),
-          _VehicleRow(
-              icon: Icons.directions_car_outlined, name: 'Mobil', value: car)
-        ])),
+              _VehicleRow(
+                  icon: Icons.two_wheeler, name: 'Motor', value: motorcycle),
+              const Divider(height: 1),
+              _VehicleRow(
+                  icon: Icons.directions_car_outlined,
+                  name: 'Mobil',
+                  value: car)
+            ])),
       ]);
 }
 
@@ -943,15 +1394,22 @@ class _VehicleRow extends StatelessWidget {
   final VehicleComparison? value;
   @override
   Widget build(BuildContext context) => Padding(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(12),
       child: Row(children: [
-        Icon(icon, color: AppColors.ink600),
-        const SizedBox(width: 12),
+        Container(
+            width: 32,
+            height: 32,
+            decoration: BoxDecoration(
+                color: AppColors.surfaceSky,
+                borderRadius: BorderRadius.circular(9)),
+            child: Icon(icon, size: 17, color: AppColors.brand600)),
+        const SizedBox(width: 9),
         Expanded(
             child: Text(name,
-                style: const TextStyle(fontWeight: FontWeight.w700))),
+                style: const TextStyle(
+                    fontSize: 10.5, fontWeight: FontWeight.w800))),
         if (value == null)
-          const Text('Tidak tersedia')
+          const Text('Tidak tersedia', style: TextStyle(fontSize: 9))
         else
           Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
             Text(
@@ -970,8 +1428,9 @@ class DetailScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final result = ref.watch(planProvider).valueOrNull;
-    if (result == null)
+    if (result == null) {
       return const Scaffold(body: Center(child: Text('Rute tidak tersedia.')));
+    }
     final option = result.options.firstWhere((item) => item.id == optionId,
         orElse: () => result.options.first);
     return Scaffold(
@@ -991,12 +1450,14 @@ class DetailScreen extends ConsumerWidget {
                   icon: const Icon(Icons.navigation_outlined),
                   label: const Text('Mulai perjalanan')))),
       body: Column(children: [
-        if (result.isDemo) const DemoBanner(),
         Expanded(
             child: ListView(
                 padding: const EdgeInsets.fromLTRB(20, 12, 20, 30),
                 children: [
-              const AirMapCard(compact: true),
+              AirMapCard(
+                  origin: option.legs.isEmpty ? null : option.legs.first.from,
+                  destination: option.legs.isEmpty ? null : option.legs.last.to,
+                  route: option),
               const SizedBox(height: 20),
               Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
                 Expanded(
@@ -1194,16 +1655,16 @@ class _ActiveTripScreenState extends ConsumerState<ActiveTripScreen> {
   Widget build(BuildContext context) {
     final option = ref.watch(selectedRouteProvider);
     final result = ref.watch(planProvider).valueOrNull;
-    if (option == null || result == null)
+    if (option == null || result == null) {
       return const Scaffold(
           body: Center(child: Text('Pilih rute terlebih dahulu.')));
+    }
     final legIndex =
         currentLeg >= option.legs.length ? option.legs.length - 1 : currentLeg;
     final leg = option.legs[legIndex];
     return Scaffold(
         body: SafeArea(
             child: Column(children: [
-      if (result.isDemo) const DemoBanner(),
       Padding(
           padding: const EdgeInsets.fromLTRB(8, 10, 14, 10),
           child: Row(children: [
@@ -1214,10 +1675,15 @@ class _ActiveTripScreenState extends ConsumerState<ActiveTripScreen> {
                 child:
                     HirupBrandHeader(section: 'PERJALANAN AKTIF', code: '09'))
           ])),
-      const Expanded(
+      Expanded(
           child: Padding(
-              padding: EdgeInsets.symmetric(horizontal: 16),
-              child: AirMapCard())),
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: SingleChildScrollView(
+                  child: AirMapCard(
+                      origin: option.legs.first.from,
+                      destination: option.legs.last.to,
+                      route: option,
+                      highlightLeg: legIndex)))),
       Container(
           width: double.infinity,
           padding: const EdgeInsets.fromLTRB(20, 22, 20, 16),

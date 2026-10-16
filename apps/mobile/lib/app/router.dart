@@ -7,6 +7,7 @@ import '../features/history/history_screen.dart';
 import '../features/insights/insights_screen.dart';
 import '../features/onboarding/onboarding_screen.dart';
 import '../features/profile/profile_screen.dart';
+import '../features/route_planning/presentation/place_picker_screen.dart';
 import '../features/route_planning/presentation/planning_screens.dart';
 import '../features/route_planning/presentation/providers.dart';
 import '../shared/app_shell.dart';
@@ -40,6 +41,14 @@ final routerProvider = Provider<GoRouter>((ref) => GoRouter(
             ]),
           ],
         ),
+        GoRoute(
+            parentNavigatorKey: _rootNavigatorKey,
+            path: '/place/origin',
+            builder: (_, __) => const PlacePickerScreen(isOrigin: true)),
+        GoRoute(
+            parentNavigatorKey: _rootNavigatorKey,
+            path: '/place/destination',
+            builder: (_, __) => const PlacePickerScreen(isOrigin: false)),
         GoRoute(
             parentNavigatorKey: _rootNavigatorKey,
             path: '/plan/mode',

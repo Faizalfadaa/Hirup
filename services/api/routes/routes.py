@@ -46,7 +46,7 @@ async def plan(
         Point(body.origin.lon, body.origin.lat),
         Point(body.destination.lon, body.destination.lat),
     )
-    if not runtime.aq.bounds.contains(origin) or not runtime.aq.bounds.contains(destination):
+    if not runtime.route_bounds.contains(origin) or not runtime.route_bounds.contains(destination):
         raise unavailable(OutOfServiceAreaError())
     if runtime.planner is None or runtime.params is None:
         raise unavailable(AQUnavailableError())
@@ -107,7 +107,7 @@ async def departure_advice(
 ) -> DepartureAdviceResponse:
     runtime = get_runtime(request)
     origin, destination = Point(origin_lon, origin_lat), Point(destination_lon, destination_lat)
-    if not runtime.aq.bounds.contains(origin) or not runtime.aq.bounds.contains(destination):
+    if not runtime.route_bounds.contains(origin) or not runtime.route_bounds.contains(destination):
         raise unavailable(OutOfServiceAreaError())
     if runtime.advice is None:
         raise unavailable(AQUnavailableError())

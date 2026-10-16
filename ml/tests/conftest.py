@@ -8,7 +8,7 @@ from shapely.geometry import box
 
 from hirup_ml.config import load_config
 from hirup_pipelines import paths, store
-from hirup_pipelines.grid import CRS, pilot_grid, to_wgs84
+from hirup_pipelines.grid import CRS, map_grid, to_wgs84
 from hirup_pipelines.ingest import openmeteo
 from hirup_pipelines.settings import pilot_bbox
 
@@ -19,6 +19,7 @@ N_HOURS = 10 * 24
 @pytest.fixture(autouse=True)
 def isolated_data_dir(tmp_path, monkeypatch):
     monkeypatch.setenv("HIRUP_DATA_DIR", str(tmp_path / "data"))
+    monkeypatch.setenv("HIRUP_MAP_EXTENT", "pilot")  # keep the small pilot grid in tests
     # Small forests keep the suite fast; accuracy is not what these tests measure.
     monkeypatch.setitem(load_config()["lightgbm"], "n_estimators", 40)
     # This simulated palette is allowed only inside isolated unit tests, never production.
@@ -27,7 +28,7 @@ def isolated_data_dir(tmp_path, monkeypatch):
 
 
 def make_cells(rng):
-    grid = pilot_grid()
+    grid = map_grid()
     cells = grid.frame()
     gradient = cells["col"] / grid.width  # more traffic towards the east
     cells["road_trunk_100m"] = np.clip(200 * gradient + rng.normal(0, 10, len(cells)), 0, None)

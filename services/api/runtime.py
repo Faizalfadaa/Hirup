@@ -49,6 +49,22 @@ def pilot_bounds() -> BoundingBox:
     return BoundingBox(**json.loads((ROOT / "contracts/golden_od.json").read_text())["bbox"])
 
 
+def aq_bounds(settings: Mapping[str, str]) -> BoundingBox:
+    """Air-quality service area: P2's map extent (`HIRUP_AQ_BOUNDS`), else the pilot.
+
+    Routing always stays inside the pilot bbox; the map may be wider."""
+    raw = settings.get("HIRUP_AQ_BOUNDS")
+    if not raw:
+        return pilot_bounds()
+    bounds, pilot = BoundingBox(**json.loads(raw)), pilot_bounds()
+    if not (
+        bounds.contains(Point(pilot.min_lon, pilot.min_lat))
+        and bounds.contains(Point(pilot.max_lon, pilot.max_lat))
+    ):
+        raise ValueError("HIRUP_AQ_BOUNDS must contain the pilot bbox")
+    return bounds
+
+
 class EmptyRouter:
     async def candidates(self, query: Query) -> tuple[Candidate, ...]:
         return ()
@@ -72,6 +88,8 @@ class Runtime:
     daily_summary: DailySummaryService | None = None
     kelurahan: KelurahanService | None = None
     data_root: Path = ROOT / "data"
+    # Routes stay inside the pilot even when the AQ map (`aq.bounds`) is wider.
+    route_bounds: BoundingBox = field(default_factory=pilot_bounds)
 
     def configure_kelurahan(self, path: Path | None = None) -> None:
         self.kelurahan = KelurahanService(path)
@@ -193,7 +211,7 @@ class Runtime:
         logging.getLogger("httpx").setLevel(logging.WARNING)
         logging.getLogger("httpcore").setLevel(logging.WARNING)
         data = Path(settings.get("HIRUP_DATA_DIR") or ROOT / "data")
-        bounds = pilot_bounds()
+        bounds = aq_bounds(settings)
         demo = settings.get("HIRUP_DEMO", "").lower() in {"true", "1"}
         publication = None
         if not demo and settings.get("HIRUP_AQ_PUBLICATION"):
@@ -280,7 +298,8 @@ class Runtime:
             {int(h): float(value) for h, value in hourly.items()} if hourly is not None else None
         )
         planner = Planner(
-            bounds=bounds,
+            # Routing graphs cover the pilot only, whatever the map extent.
+            bounds=pilot_bounds(),
             aq=provider,
             params=params,
             ranking={profile: load_ranking_params(profile) for profile in ("umum", "rentan")},

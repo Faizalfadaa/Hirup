@@ -12,9 +12,9 @@ import shapely
 
 from hirup_pipelines import paths, schemas, store
 from hirup_pipelines.features.static import AREA_FACTOR, Layers, compute_static
-from hirup_pipelines.grid import CRS, Grid, cell_id, pilot_grid
+from hirup_pipelines.grid import CRS, Grid, cell_id, map_grid
 from hirup_pipelines.ingest import gtfs, osm, rasters
-from hirup_pipelines.settings import load_config, pilot_bbox
+from hirup_pipelines.settings import load_config, map_bbox
 
 log = logging.getLogger(__name__)
 
@@ -41,7 +41,7 @@ def load_transit() -> gpd.GeoDataFrame | None:
 
 def build_boundaries() -> tuple[gpd.GeoDataFrame, str]:
     """Kelurahan polygons from OSM, saved as GeoJSON for the app's Insight Kota tab."""
-    kelurahan = osm.fetch_admin(pilot_bbox())
+    kelurahan = osm.fetch_admin(map_bbox())
     version = f"kelurahan-osm-{date.today().isoformat()}"
     target = paths.boundaries() / f"{version}.geojson"
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -62,7 +62,7 @@ def build_boundaries() -> tuple[gpd.GeoDataFrame, str]:
 
 def build_grid_static() -> pd.DataFrame:
     """Static features + kelurahan for every pilot cell -> `grid_cells.parquet` (GeoParquet)."""
-    grid = pilot_grid()
+    grid = map_grid()
     if not (osm.index_dir() / "meta.json").is_file():
         osm.build_index()
     frame = compute_static(grid, gather_layers(grid, load_transit()))
@@ -115,7 +115,7 @@ def build_grid_static() -> pd.DataFrame:
 
 def build_station_static(stations: pd.DataFrame) -> pd.DataFrame:
     """Static features at each station: a grid lookup inside the pilot, a small patch outside."""
-    grid = pilot_grid()
+    grid = map_grid()
     grid_static = pd.read_parquet(paths.grid_cells()).drop(columns=["geometry", "kelurahan_id"])
     done = store.read_parquet(paths.station_static())
     known = set() if done is None else set(done["station_id"])

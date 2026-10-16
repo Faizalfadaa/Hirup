@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -24,16 +25,29 @@ def atomic_path(path: Path) -> Path:
     return path.with_name(f".{path.name}.{uuid.uuid4().hex[:8]}.tmp")
 
 
+def replace(tmp: Path, path: Path, attempts: int = 10, wait_s: float = 0.2) -> None:
+    """`os.replace` that rides out short Windows locks (sync clients, scanners, readers)."""
+    for attempt in range(attempts):
+        try:
+            os.replace(tmp, path)
+            return
+        except PermissionError:
+            if attempt == attempts - 1:
+                tmp.unlink(missing_ok=True)
+                raise
+            time.sleep(wait_s * (attempt + 1))
+
+
 def write_parquet(frame: pd.DataFrame, path: Path) -> None:
     tmp = atomic_path(path)
     frame.to_parquet(tmp, index=False)
-    os.replace(tmp, path)
+    replace(tmp, path)
 
 
 def write_json(payload: Any, path: Path) -> None:
     tmp = atomic_path(path)
     tmp.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-    os.replace(tmp, path)
+    replace(tmp, path)
 
 
 def read_json(path: Path, default: Any = None) -> Any:

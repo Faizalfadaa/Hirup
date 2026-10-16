@@ -10,7 +10,7 @@ import rasterio
 from hirup_ml import cli, dataset, insights, monitor, predict, raster, registry, train
 from hirup_ml.config import FALLBACK_VERSION, manifests_dir, tiles_dir
 from hirup_pipelines import paths, store
-from hirup_pipelines.grid import pilot_grid
+from hirup_pipelines.grid import map_grid
 from hirup_pipelines.settings import data_dir, pilot_bbox
 from services.exposure.aq_provider import CogAQProvider
 from services.exposure.geometry import BoundingBox, Point
@@ -40,7 +40,7 @@ def test_postprocess_orders_and_clips_quantiles():
 
 
 def test_write_cog_rejects_gaps(tmp_path):
-    grid = pilot_grid()
+    grid = map_grid()
     bad = np.ones(grid.shape)
     bad[0, 0] = np.nan
     with pytest.raises(ValueError, match="finite"):
@@ -185,9 +185,17 @@ def test_drift_alarm_switches_to_the_fallback(toy):
 def test_tile_geometry_and_colours():
     xs, ys = raster.tile_range(12)
     assert len(xs) * len(ys) <= 9
-    assert (raster.colourise(np.array([0.0]))[0] == [0, 176, 80]).all()
-    assert (raster.colourise(np.array([15.5]))[0] == [0, 112, 192]).all()
-    assert (raster.colourise(np.array([900.0]))[0] == [0, 0, 0]).all()
+    # Flat colour per ISPU category; an upper bound still belongs to its own category.
+    colours = raster.colourise(np.array([0.0, 15.5, 15.6, 55.4, 55.5, 150.5, 900.0]))
+    assert colours.tolist() == [
+        [0, 176, 80],
+        [0, 176, 80],
+        [0, 112, 192],
+        [0, 112, 192],
+        [255, 192, 0],
+        [255, 0, 0],
+        [0, 0, 0],
+    ]
 
 
 def test_env_lists_every_manifest_slot():
@@ -203,3 +211,23 @@ def test_env_command_exports_every_variable(capsys):
     lines = capsys.readouterr().out.splitlines()
     assert len(lines) == len(cli.api_env())
     assert all(line.startswith("export HIRUP_") for line in lines)
+
+
+def test_backfill_records_past_nowcasts_per_kelurahan_without_rasters(toy):
+    entry = train.train(dataset.load(), n_trials=0)
+    end = toy["last_hour"].to_pydatetime()
+    start = end - timedelta(hours=3)
+    assert predict.backfill_insights(start, end) == 3
+    hourly = store.read_parquet(insights.hourly_path())
+    assert set(hourly["kelurahan_id"]) == {"osm_r1", "osm_r2"}
+    assert len(hourly) == 2 * 3
+    assert set(hourly["kind"]) == {"nowcast"}
+    assert set(hourly["model_version"]) == {entry["model_version"]}
+    assert set(hourly["boundaries_version"]) == {"kelurahan-toy"}
+    assert not list((data_dir() / "rasters").glob("run_*"))  # no rasters, no tiles
+
+
+def test_missing_kecamatan_gets_a_non_blank_label():
+    assert insights.kecamatan_label("Tebet") == "Tebet"
+    assert insights.kecamatan_label(float("nan")) == insights.UNKNOWN_KECAMATAN
+    assert insights.kecamatan_label("  ") == insights.UNKNOWN_KECAMATAN
