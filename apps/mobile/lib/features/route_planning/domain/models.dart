@@ -70,7 +70,7 @@ class DataFreshness {
 }
 
 class TripLeg {
-  const TripLeg({required this.mode, required this.startTime, required this.endTime, required this.durationS, required this.from, required this.to, required this.meanPm25, required this.doseUg, this.routeName});
+  const TripLeg({required this.mode, required this.startTime, required this.endTime, required this.durationS, required this.from, required this.to, required this.meanPm25, required this.doseUg, this.routeName, this.polyline, this.segmentsPm25});
   final String mode;
   final DateTime startTime;
   final DateTime endTime;
@@ -80,6 +80,10 @@ class TripLeg {
   final double meanPm25;
   final double doseUg;
   final String? routeName;
+  /// Encoded polyline (precision 6); null for WAIT legs.
+  final String? polyline;
+  /// P50 PM2.5 per polyline segment, for colouring the route (FR-04).
+  final List<double>? segmentsPm25;
   factory TripLeg.fromJson(Map<String, dynamic> json) {
     final route = json['route'] as Map<String, dynamic>?;
     return TripLeg(
@@ -92,6 +96,8 @@ class TripLeg {
       meanPm25: (json['mean_pm25'] as num).toDouble(),
       doseUg: (json['dose_ug'] as num).toDouble(),
       routeName: route?['short_name'] as String? ?? route?['long_name'] as String?,
+      polyline: json['polyline'] as String?,
+      segmentsPm25: (json['segments_pm25'] as List<dynamic>?)?.map((value) => (value as num).toDouble()).toList(),
     );
   }
 }

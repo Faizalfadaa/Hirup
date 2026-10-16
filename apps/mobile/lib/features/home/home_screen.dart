@@ -36,7 +36,7 @@ class HomeScreen extends ConsumerWidget {
             const SizedBox(height: 22),
             Row(children: [Expanded(child: Text('Area perjalanan', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontSize: 16))), TextButton.icon(onPressed: () {}, icon: const Icon(Icons.layers_outlined, size: 16), label: const Text('Lapisan'))]),
             const SizedBox(height: 6),
-            const AirMapCard(compact: true),
+            AirMapCard(compact: true, origin: draft.origin, destination: draft.destination),
           ])),
         ])),
       ]),

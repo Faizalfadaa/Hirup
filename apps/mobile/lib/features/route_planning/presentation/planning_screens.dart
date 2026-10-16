@@ -54,7 +54,7 @@ class ResultsScreen extends ConsumerWidget {
         return Column(children: [
           if (result.isDemo) const DemoBanner(),
           Expanded(child: ListView(padding: const EdgeInsets.fromLTRB(20, 12, 20, 36), children: [
-            _JourneyCapsule(draft: draft), const SizedBox(height: 14), const AirMapCard(compact: true), const SizedBox(height: 24),
+            _JourneyCapsule(draft: draft), const SizedBox(height: 14), AirMapCard(compact: true, interactive: false, origin: draft.origin, destination: draft.destination, route: result.options.isEmpty ? null : result.options.first), const SizedBox(height: 24),
             const PageHeader(eyebrow: 'Hasil perjalanan', title: 'Pilih perjalanan yang paling pas.', subtitle: 'Bandingkan udara yang dihirup dan menit yang dibutuhkan.'), const SizedBox(height: 18),
             Row(children: [QualityBadge(quality: result.dataQuality), const SizedBox(width: 8), Text('${formatTime(result.freshness.validHour)} · ${result.freshness.confidence}', style: const TextStyle(fontSize: 12, color: AppColors.ink600))]), const SizedBox(height: 16),
             ...result.options.asMap().entries.map((entry) => Padding(padding: const EdgeInsets.only(bottom: 16), child: _RouteCard(index: entry.key + 1, option: entry.value, onTap: () { ref.read(selectedRouteIdProvider.notifier).state = entry.value.id; context.push('/plan/detail/${entry.value.id}'); }))),
@@ -139,7 +139,7 @@ class DetailScreen extends ConsumerWidget {
       appBar: AppBar(title: const Text('Detail rute')),
       bottomNavigationBar: SafeArea(child: Container(padding: const EdgeInsets.all(16), decoration: const BoxDecoration(color: Colors.white, border: Border(top: BorderSide(color: AppColors.stroke))), child: FilledButton.icon(onPressed: () { ref.read(selectedRouteIdProvider.notifier).state = option.id; context.push('/trip/active'); }, icon: const Icon(Icons.navigation_outlined), label: const Text('Mulai perjalanan')))),
       body: Column(children: [if (result.isDemo) const DemoBanner(), Expanded(child: ListView(padding: const EdgeInsets.fromLTRB(20, 12, 20, 30), children: [
-        const AirMapCard(compact: true), const SizedBox(height: 20),
+        AirMapCard(origin: option.legs.isEmpty ? null : option.legs.first.from, destination: option.legs.isEmpty ? null : option.legs.last.to, route: option), const SizedBox(height: 20),
         Row(crossAxisAlignment: CrossAxisAlignment.end, children: [Expanded(child: Text(formatDuration(option.durationS), style: Theme.of(context).textTheme.headlineMedium)), Text(formatDose(option.doseUg), style: const TextStyle(fontSize: 25, fontWeight: FontWeight.w800, color: AppColors.brand600))]),
         const SizedBox(height: 5), Text('${formatTime(option.departAt)}–${formatTime(option.arriveAt)} · ${(option.distanceM / 1000).toStringAsFixed(1)} km · ${option.transfers} transit', style: const TextStyle(color: AppColors.ink600)), const SizedBox(height: 16),
         Container(padding: const EdgeInsets.all(16), decoration: BoxDecoration(color: AppColors.surfaceMint, borderRadius: BorderRadius.circular(18)), child: Text('Estimasi dosis ${formatDose(option.doseUg)} dengan rentang ${formatDose(option.doseP10)} sampai ${formatDose(option.doseP90)}.', style: const TextStyle(fontWeight: FontWeight.w700))),
@@ -205,7 +205,7 @@ class _ActiveTripScreenState extends ConsumerState<ActiveTripScreen> {
     return Scaffold(body: SafeArea(child: Column(children: [
       if (result.isDemo) const DemoBanner(),
       Padding(padding: const EdgeInsets.all(12), child: Row(children: [IconButton(onPressed: () => context.pop(), icon: const Icon(Icons.close)), const Expanded(child: Text('Perjalanan aktif', textAlign: TextAlign.center, style: TextStyle(fontWeight: FontWeight.w800))), const SizedBox(width: 48)])),
-      const Expanded(child: Padding(padding: EdgeInsets.symmetric(horizontal: 16), child: AirMapCard())),
+      Expanded(child: Padding(padding: const EdgeInsets.symmetric(horizontal: 16), child: SingleChildScrollView(child: AirMapCard(origin: option.legs.first.from, destination: option.legs.last.to, route: option, highlightLeg: legIndex)))),
       Container(width: double.infinity, padding: const EdgeInsets.fromLTRB(20, 22, 20, 16), decoration: const BoxDecoration(color: Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(28))), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Text('Langkah ${currentLeg + 1} dari ${option.legs.length}', style: const TextStyle(fontSize: 11, color: AppColors.brand600, fontWeight: FontWeight.w800)), const SizedBox(height: 7), Text('${leg.from.name} → ${leg.to.name}', style: Theme.of(context).textTheme.titleLarge), const SizedBox(height: 8), Text('${formatDuration(leg.durationS)} · estimasi ${formatDose(leg.doseUg)}', style: const TextStyle(color: AppColors.ink600)), const SizedBox(height: 18),
         SizedBox(width: double.infinity, child: FilledButton(onPressed: () {
