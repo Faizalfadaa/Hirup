@@ -30,6 +30,14 @@ from hirup_pipelines.settings import TIMEZONE
 KEYS = ["kelurahan_id", "ts"]
 
 
+UNKNOWN_KECAMATAN = "Tidak tercatat di OSM"
+
+
+def kecamatan_label(value: Any) -> str:
+    """Some OSM kelurahan (mostly outside DKI) have no kecamatan polygon around them."""
+    return value if isinstance(value, str) and value.strip() else UNKNOWN_KECAMATAN
+
+
 def hourly_path() -> Any:
     return insights_dir() / "kelurahan_hourly.parquet"
 
@@ -137,7 +145,7 @@ def write_daily(run_dir: Path, generated_at: datetime) -> Path | None:
                 {
                     "kelurahan_id": str(row.kelurahan_id),
                     "name": row.name,
-                    "kecamatan": row.kecamatan,
+                    "kecamatan": kecamatan_label(row.kecamatan),
                 }
                 for row in static.itertuples(index=False)
             ],
@@ -208,7 +216,7 @@ def summarise(start: date, end: date, hours: list[int] | None = None) -> dict[st
             {
                 "kelurahan_id": row.kelurahan_id,
                 "name": row.name,
-                "kecamatan": row.kecamatan if isinstance(row.kecamatan, str) else "",
+                "kecamatan": kecamatan_label(row.kecamatan),
                 "mean_pm25": round(float(row.mean_pm25), 2),
                 "inequality_index": round(float(row.inequality_index), 4),
                 "priority_rank": int(row.priority_rank),

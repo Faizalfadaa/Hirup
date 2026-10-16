@@ -225,3 +225,9 @@ def test_backfill_records_past_nowcasts_per_kelurahan_without_rasters(toy):
     assert set(hourly["model_version"]) == {entry["model_version"]}
     assert set(hourly["boundaries_version"]) == {"kelurahan-toy"}
     assert not list((data_dir() / "rasters").glob("run_*"))  # no rasters, no tiles
+
+
+def test_missing_kecamatan_gets_a_non_blank_label():
+    assert insights.kecamatan_label("Tebet") == "Tebet"
+    assert insights.kecamatan_label(float("nan")) == insights.UNKNOWN_KECAMATAN
+    assert insights.kecamatan_label("  ") == insights.UNKNOWN_KECAMATAN
