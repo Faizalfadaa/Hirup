@@ -10,28 +10,23 @@ import '../features/route_planning/domain/models.dart';
 /// Pilot corridor (SPEC 6.1): lat -6.30..-6.13, lon 106.76..106.85.
 final pilotBounds = LatLngBounds(const LatLng(-6.30, 106.76), const LatLng(-6.13, 106.85));
 
-/// Colour anchors at the PM2.5 category bounds used by the P2 tile renderer
-/// (ml/configs/model.yaml `tiles.ispu`). Still `verified_by: null` there, so the
-/// colours are labelled as an estimate in the legend.
-const _anchors = <(double, Color)>[
-  (0, Color(0xFF00B050)),
-  (15.5, Color(0xFF00B050)),
-  (55.4, Color(0xFF0070C0)),
-  (150.4, Color(0xFFFFC000)),
-  (250.4, Color(0xFFFF0000)),
-  (500, Color(0xFF000000)),
+/// ISPU PM2.5 categories, the same table the P2 tile renderer uses
+/// (ml/configs/model.yaml `tiles.ispu`, Permen LHK P.14/2020 Lampiran I-II).
+/// The bounds are for 24-hour means, so hourly colours are labelled an estimate.
+const ispuPm25 = <(String, double, Color)>[
+  ('Baik', 15.5, Color(0xFF00B050)),
+  ('Sedang', 55.4, Color(0xFF0070C0)),
+  ('Tidak sehat', 150.4, Color(0xFFFFC000)),
+  ('Sangat tidak sehat', 250.4, Color(0xFFFF0000)),
+  ('Berbahaya', 500, Color(0xFF000000)),
 ];
 
+/// One flat colour per category; an upper bound still belongs to its own category.
 Color pm25Color(double value) {
-  if (value <= _anchors.first.$1) return _anchors.first.$2;
-  for (var i = 1; i < _anchors.length; i++) {
-    final (upper, colour) = _anchors[i];
-    if (value <= upper) {
-      final (lower, from) = _anchors[i - 1];
-      return Color.lerp(from, colour, (value - lower) / (upper - lower))!;
-    }
+  for (final (_, upper, colour) in ispuPm25) {
+    if (value <= upper) return colour;
   }
-  return _anchors.last.$2;
+  return ispuPm25.last.$3;
 }
 
 /// A run of consecutive polyline segments that share one colour.
@@ -52,8 +47,8 @@ class RouteDrawing {
 }
 
 /// Colours each leg by `segments_pm25` (FR-04), one value per polyline segment.
-/// Values are binned to 5 ug/m3 so neighbouring segments merge into longer runs;
-/// legs without concentrations use their mean. Walking and cycling legs are dashed.
+/// Neighbouring segments in the same category merge into longer runs; legs without
+/// concentrations use their mean. Walking and cycling legs are dashed.
 RouteDrawing routeDrawing(RouteOption option, {int? highlightLeg}) {
   final casings = <List<LatLng>>[];
   final runs = <RouteSegment>[];
@@ -69,7 +64,7 @@ RouteDrawing routeDrawing(RouteOption option, {int? highlightLeg}) {
     final perSegment = values != null && values.length == points.length - 1;
     Color colourAt(int i) {
       final value = perSegment ? values[i] : leg.meanPm25;
-      final colour = pm25Color((value / 5).round() * 5.0);
+      final colour = pm25Color(value);
       return dimmed ? colour.withValues(alpha: .35) : colour;
     }
 
@@ -208,10 +203,9 @@ class Pm25Legend extends StatelessWidget {
   const Pm25Legend({super.key});
   @override
   Widget build(BuildContext context) => Wrap(spacing: 10, runSpacing: 4, crossAxisAlignment: WrapCrossAlignment.center, children: [
-        // Each swatch is the anchor colour at the category's upper bound.
-        for (final (label, value) in const [('Baik', 15.5), ('Sedang', 55.4), ('Tidak sehat', 150.4), ('Sangat tidak sehat', 250.4)])
+        for (final (label, _, colour) in ispuPm25.take(4))
           Row(mainAxisSize: MainAxisSize.min, children: [
-            Container(width: 12, height: 12, decoration: BoxDecoration(color: pm25Color(value), borderRadius: BorderRadius.circular(3))),
+            Container(width: 12, height: 12, decoration: BoxDecoration(color: colour, borderRadius: BorderRadius.circular(3))),
             const SizedBox(width: 4),
             Text(label, style: const TextStyle(fontSize: 11, color: AppColors.ink700)),
           ]),

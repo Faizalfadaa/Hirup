@@ -50,9 +50,12 @@ void main() {
     expect(run.dashed, isFalse);
   });
 
-  test('PM2.5 colours get darker as concentration rises past the bounds', () {
+  test('PM2.5 colours are flat per ISPU category, bounds inclusive', () {
     expect(pm25Color(5), const Color(0xFF00B050));
+    expect(pm25Color(15.5), const Color(0xFF00B050));
+    expect(pm25Color(15.6), const Color(0xFF0070C0));
     expect(pm25Color(55.4), const Color(0xFF0070C0));
+    expect(pm25Color(55.5), const Color(0xFFFFC000));
     expect(pm25Color(1000), const Color(0xFF000000));
   });
 }
