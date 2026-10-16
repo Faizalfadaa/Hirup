@@ -7,8 +7,35 @@ import '../core/theme/app_theme.dart';
 import '../core/utils/polyline.dart';
 import '../features/route_planning/domain/models.dart';
 
-/// Pilot corridor (SPEC 6.1): lat -6.30..-6.13, lon 106.76..106.85.
+/// Pilot corridor (SPEC 6.1): lat -6.30..-6.13, lon 106.76..106.85. Routes stay inside it.
 final pilotBounds = LatLngBounds(const LatLng(-6.30, 106.76), const LatLng(-6.13, 106.85));
+
+/// PM2.5 map extent: mainland DKI Jakarta (`map_extent` in pipelines/configs/pipeline.yaml).
+final mapBounds = LatLngBounds(const LatLng(-6.375, 106.685), const LatLng(-6.085, 106.975));
+
+/// Muted OpenStreetMap basemap shared by every map in the app.
+Widget basemapLayer() => ColorFiltered(
+      // Muted so the PM2.5 colours carry the meaning (SPEC 14.4).
+      colorFilter: const ColorFilter.matrix(_muted),
+      child: TileLayer(
+        // OpenStreetMap standard tiles: no key; the tile usage policy asks for
+        // attribution and an identifying user agent, both set here.
+        urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+        userAgentPackageName: 'id.hirup.app',
+        maxNativeZoom: 19,
+      ),
+    );
+
+/// Required by the OSM tile usage policy; small so it does not cover the route.
+Widget osmAttribution() => Align(
+      alignment: Alignment.bottomRight,
+      child: Container(
+        margin: const EdgeInsets.all(6),
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+        decoration: BoxDecoration(color: Colors.white.withValues(alpha: .85), borderRadius: BorderRadius.circular(6)),
+        child: const Text('© OpenStreetMap contributors', style: TextStyle(fontSize: 9, color: AppColors.ink700)),
+      ),
+    );
 
 /// ISPU PM2.5 categories, the same table the P2 tile renderer uses
 /// (ml/configs/model.yaml `tiles.ispu`, Permen LHK P.14/2020 Lampiran I-II).
@@ -118,7 +145,7 @@ class AirMap extends StatelessWidget {
     final focus = [...ends, ...drawing.points];
     final fit = focus.length >= 2
         ? CameraFit.coordinates(coordinates: focus, padding: const EdgeInsets.all(36), maxZoom: 16)
-        : CameraFit.bounds(bounds: pilotBounds, padding: const EdgeInsets.all(8));
+        : CameraFit.bounds(bounds: mapBounds, padding: const EdgeInsets.all(8));
     return FlutterMap(
       // A new key refits the camera when the route or the end points change.
       key: ValueKey(Object.hashAll([...focus, highlightLeg])),
@@ -132,17 +159,7 @@ class AirMap extends StatelessWidget {
         ),
       ),
       children: [
-        ColorFiltered(
-          // Muted basemap so the PM2.5 colours carry the meaning (SPEC 14.4).
-          colorFilter: const ColorFilter.matrix(_muted),
-          child: TileLayer(
-            // OpenStreetMap standard tiles: no key; the tile usage policy asks for
-            // attribution and an identifying user agent, both set here.
-            urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-            userAgentPackageName: 'id.hirup.app',
-            maxNativeZoom: 19,
-          ),
-        ),
+        basemapLayer(),
         if (showAirLayer)
           Opacity(
             opacity: .65,
@@ -152,7 +169,7 @@ class AirMap extends StatelessWidget {
               urlTemplate: '${AppConfig.apiBaseUrl}/v1/aq/tiles/{z}/{x}/{y}.png',
               minNativeZoom: 10,
               maxNativeZoom: 15,
-              tileBounds: pilotBounds,
+              tileBounds: mapBounds,
               userAgentPackageName: 'id.hirup.app',
               errorTileCallback: (tile, error, stackTrace) {},
             ),
@@ -173,16 +190,7 @@ class AirMap extends StatelessWidget {
             if (origin != null) _endMarker(LatLng(origin!.lat, origin!.lon), Icons.trip_origin, AppColors.brand600),
             if (destination != null) _endMarker(LatLng(destination!.lat, destination!.lon), Icons.place, AppColors.danger700),
           ]),
-        // Required by the OSM tile usage policy; kept small so it does not cover the route.
-        Align(
-          alignment: Alignment.bottomRight,
-          child: Container(
-            margin: const EdgeInsets.all(6),
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-            decoration: BoxDecoration(color: Colors.white.withValues(alpha: .85), borderRadius: BorderRadius.circular(6)),
-            child: const Text('© OpenStreetMap contributors', style: TextStyle(fontSize: 9, color: AppColors.ink700)),
-          ),
-        ),
+        osmAttribution(),
       ],
     );
   }

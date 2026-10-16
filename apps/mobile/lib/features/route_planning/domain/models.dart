@@ -10,6 +10,9 @@ class PlacePoint {
   final double lat;
   final double lon;
   Map<String, dynamic> toCoordinatesJson() => {'lat': lat, 'lon': lon};
+  /// Routes are planned only inside the pilot corridor (SPEC 6.1, contracts/golden_od.json).
+  bool get insideRoutingPilot => lat >= -6.30 && lat <= -6.13 && lon >= 106.76 && lon <= 106.85;
+  bool samePlaceAs(PlacePoint other) => lat == other.lat && lon == other.lon;
   factory PlacePoint.fromJson(Map<String, dynamic> json) => PlacePoint(
         name: json['name'] as String? ?? 'Titik',
         lat: (json['lat'] as num).toDouble(),

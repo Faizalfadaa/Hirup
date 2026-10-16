@@ -159,23 +159,47 @@ class _JourneyCard extends ConsumerWidget {
       ])),
       const _Perforation(),
       Padding(padding: const EdgeInsets.fromLTRB(13, 10, 13, 13), child: Column(children: [
-        DropdownButtonFormField<PlacePoint>(
-          key: ValueKey('origin-${draft.origin.name}'), initialValue: draft.origin, isDense: true, iconSize: 18, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.ink900), decoration: const InputDecoration(labelText: 'Asal', prefixIcon: Icon(Icons.trip_origin, size: 18), contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10)),
-          items: pilotPlaces.map((p) => DropdownMenuItem(value: p, child: Text(p.name))).toList(), onChanged: (p) { if (p != null) ref.read(journeyDraftProvider.notifier).setOrigin(p); },
-        ),
+        _PlaceField(label: 'Asal', place: draft.origin, icon: Icons.trip_origin, onTap: () => context.push('/place/origin')),
         SizedBox(height: 32, child: Row(children: [const Expanded(child: Divider()), IconButton(tooltip: 'Tukar asal dan tujuan', padding: EdgeInsets.zero, constraints: const BoxConstraints.tightFor(width: 34, height: 30), onPressed: ref.read(journeyDraftProvider.notifier).swap, icon: const Icon(Icons.swap_vert, size: 18)), const Expanded(child: Divider())])),
-        DropdownButtonFormField<PlacePoint>(
-          key: ValueKey('destination-${draft.destination.name}'), initialValue: draft.destination, isDense: true, iconSize: 18, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.ink900), decoration: const InputDecoration(labelText: 'Tujuan', prefixIcon: Icon(Icons.location_on_outlined, size: 18), contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10)),
-          items: pilotPlaces.map((p) => DropdownMenuItem(value: p, child: Text(p.name))).toList(), onChanged: (p) { if (p != null) ref.read(journeyDraftProvider.notifier).setDestination(p); },
-        ),
+        _PlaceField(label: 'Tujuan', place: draft.destination, icon: Icons.location_on_outlined, onTap: () => context.push('/place/destination')),
+        if (!draft.origin.insideRoutingPilot || !draft.destination.insideRoutingPilot)
+          const Padding(
+            padding: EdgeInsets.only(top: 8),
+            child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Icon(Icons.info_outline, size: 16, color: AppColors.danger700),
+              SizedBox(width: 6),
+              Expanded(child: Text('Rute baru tersedia di koridor pilot Lebak Bulus–Kota. Kualitas udara di titik ini tetap bisa dilihat di peta.', style: TextStyle(fontSize: 11, color: AppColors.danger700))),
+            ]),
+          ),
         const SizedBox(height: 7),
         Row(children: [const Icon(Icons.schedule, size: 17), const SizedBox(width: 7), Text('Berangkat ${formatTime(draft.departAt)}', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700)), const Spacer(), TextButton(style: TextButton.styleFrom(minimumSize: const Size(42, 32), padding: const EdgeInsets.symmetric(horizontal: 8)), onPressed: () async {
           final picked = await showTimePicker(context: context, initialTime: TimeOfDay.fromDateTime(draft.departAt));
           if (picked != null) ref.read(journeyDraftProvider.notifier).setTime(DateTime(draft.departAt.year, draft.departAt.month, draft.departAt.day, picked.hour, picked.minute));
         }, child: const Text('Ubah'))]),
-        const SizedBox(height: 4), SizedBox(width: double.infinity, height: 44, child: FilledButton(onPressed: draft.origin == draft.destination ? null : () => context.push('/plan/mode'), child: const Row(mainAxisAlignment: MainAxisAlignment.center, children: [Text('CARI RUTE', style: TextStyle(fontSize: 12, letterSpacing: .7, color: Colors.white)), SizedBox(width: 8), Icon(Icons.arrow_outward, size: 18, color: Colors.white)]))),
+        const SizedBox(height: 4), SizedBox(width: double.infinity, height: 44, child: FilledButton(onPressed: draft.origin.samePlaceAs(draft.destination) || !draft.origin.insideRoutingPilot || !draft.destination.insideRoutingPilot ? null : () => context.push('/plan/mode'), child: const Row(mainAxisAlignment: MainAxisAlignment.center, children: [Text('CARI RUTE', style: TextStyle(fontSize: 12, letterSpacing: .7, color: Colors.white)), SizedBox(width: 8), Icon(Icons.arrow_outward, size: 18, color: Colors.white)]))),
       ])),
     ]),
+  );
+}
+
+/// Tappable origin/destination field that opens the place picker (FR-01).
+class _PlaceField extends StatelessWidget {
+  const _PlaceField({required this.label, required this.place, required this.icon, required this.onTap});
+  final String label;
+  final PlacePoint place;
+  final IconData icon;
+  final VoidCallback onTap;
+  @override Widget build(BuildContext context) => Semantics(
+    button: true,
+    label: '$label: ${place.name}. Ketuk untuk mengganti.',
+    child: InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(14),
+      child: InputDecorator(
+        decoration: InputDecoration(labelText: label, prefixIcon: Icon(icon, size: 18), suffixIcon: const Icon(Icons.search, size: 18), contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10), isDense: true),
+        child: Text(place.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.ink900)),
+      ),
+    ),
   );
 }
 
