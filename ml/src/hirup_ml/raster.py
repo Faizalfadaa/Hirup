@@ -21,7 +21,7 @@ from scipy import ndimage
 from hirup_ml.config import MANIFEST_SCHEMA, load_config
 from hirup_pipelines import store
 from hirup_pipelines.grid import CRS, Grid, to_utm
-from hirup_pipelines.settings import TIMEZONE, data_dir, pilot_bbox
+from hirup_pipelines.settings import TIMEZONE, data_dir, map_bbox
 
 FloatArray = npt.NDArray[np.float64]
 QUANTILES = ("p10", "p50", "p90")
@@ -115,7 +115,7 @@ def write_set(
         path = run_dir / f"pm25_{key}_{name}.tif"
         write_cog(path, raster.arrays[name], grid)
         files[name] = path.relative_to(data_dir()).as_posix()
-    box = pilot_bbox()
+    box = map_bbox()
     p50 = raster.arrays["p50"]
     manifest = {
         "manifest_version": "1.0",
@@ -170,7 +170,7 @@ def colourise(values: FloatArray) -> npt.NDArray[np.uint8]:
 
 
 def tile_range(z: int) -> tuple[range, range]:
-    box = pilot_bbox()
+    box = map_bbox()
     n = 2**z
 
     def x_of(lon: float) -> int:
@@ -220,7 +220,7 @@ def _pixel_positions(grid: Grid, n: int, x: int, y: int) -> tuple[FloatArray, Fl
 
 def tile_indices(grid: Grid) -> list[TileIndex]:
     """Tile geometry depends only on the grid, so it is computed once per run."""
-    box = pilot_bbox()
+    box = map_bbox()
     out = []
     for z in load_config()["tiles"]["zooms"]:
         n = 2**z

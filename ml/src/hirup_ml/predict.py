@@ -37,7 +37,7 @@ from hirup_ml.dataset import FOLD_COLUMNS, shared_features
 from hirup_pipelines import paths, qc, store
 from hirup_pipelines.features import dynamic
 from hirup_pipelines.features.static import feature_columns
-from hirup_pipelines.grid import Grid, pilot_grid
+from hirup_pipelines.grid import Grid, map_grid
 from hirup_pipelines.settings import data_dir
 
 log = logging.getLogger(__name__)
@@ -66,7 +66,7 @@ class Inputs:
 
 def load_inputs(valid_hour: datetime) -> Inputs:
     cfg = load_config()["inference"]
-    grid = pilot_grid()
+    grid = map_grid()
     cells = store.read_parquet(paths.grid_cells())
     weather, cams = store.read_parquet(paths.weather()), store.read_parquet(paths.cams())
     if cells is None or weather is None or cams is None:

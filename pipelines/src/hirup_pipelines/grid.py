@@ -1,4 +1,4 @@
-"""The 100 m pilot grid in EPSG:32748, aligned to the lattice the API uses for `cell_id`."""
+"""The 100 m map grid in EPSG:32748, aligned to the lattice the API uses for `cell_id`."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ import pandas as pd
 from pyproj import Transformer
 from rasterio.transform import Affine
 
-from hirup_pipelines.settings import BBox, load_config, pilot_bbox
+from hirup_pipelines.settings import BBox, load_config, map_bbox
 
 CRS = "EPSG:32748"
 TO_UTM = Transformer.from_crs("EPSG:4326", CRS, always_xy=True)
@@ -167,5 +167,6 @@ def cell_id(x: npt.ArrayLike, y: npt.ArrayLike) -> npt.NDArray[np.str_]:
     return ids
 
 
-def pilot_grid() -> Grid:
-    return Grid.from_bbox(pilot_bbox(), float(load_config()["grid"]["resolution_m"]))
+def map_grid() -> Grid:
+    """Every cell of the PM2.5 map (`map_extent`), which contains the routing pilot."""
+    return Grid.from_bbox(map_bbox(), float(load_config()["grid"]["resolution_m"]))

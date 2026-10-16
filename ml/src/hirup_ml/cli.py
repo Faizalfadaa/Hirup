@@ -5,11 +5,12 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+from dataclasses import asdict
 from datetime import date, datetime
 
 from hirup_ml import baseline, insights, predict, registry, train
 from hirup_ml.config import manifests_dir
-from hirup_pipelines.settings import data_dir
+from hirup_pipelines.settings import data_dir, map_bbox
 
 
 def api_env() -> dict[str, str]:
@@ -21,6 +22,8 @@ def api_env() -> dict[str, str]:
         "HIRUP_AQ_MANIFESTS": json.dumps(slots, separators=(",", ":")),
         "HIRUP_AQ_INPUTS": (data_dir() / "aq_inputs.json").as_posix(),
         "HIRUP_CITY_MEDIANS": (data_dir() / "city_medians.json").as_posix(),
+        # The map extent; routes stay inside the pilot bbox of contracts/golden_od.json.
+        "HIRUP_AQ_BOUNDS": json.dumps(asdict(map_bbox()), separators=(",", ":")),
     }
 
 

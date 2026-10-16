@@ -10,7 +10,7 @@ import rasterio
 from hirup_ml import cli, dataset, insights, monitor, predict, raster, registry, train
 from hirup_ml.config import FALLBACK_VERSION, manifests_dir, tiles_dir
 from hirup_pipelines import paths, store
-from hirup_pipelines.grid import pilot_grid
+from hirup_pipelines.grid import map_grid
 from hirup_pipelines.settings import data_dir, pilot_bbox
 from services.exposure.aq_provider import CogAQProvider
 from services.exposure.geometry import BoundingBox, Point
@@ -40,7 +40,7 @@ def test_postprocess_orders_and_clips_quantiles():
 
 
 def test_write_cog_rejects_gaps(tmp_path):
-    grid = pilot_grid()
+    grid = map_grid()
     bad = np.ones(grid.shape)
     bad[0, 0] = np.nan
     with pytest.raises(ValueError, match="finite"):

@@ -24,7 +24,7 @@ import rasterio
 from hirup_ml import raster
 from hirup_ml.config import FALLBACK_VERSION, insights_dir, load_config, rasters_dir
 from hirup_pipelines import paths, store
-from hirup_pipelines.grid import CRS, pilot_grid
+from hirup_pipelines.grid import CRS, map_grid
 from hirup_pipelines.settings import TIMEZONE
 
 KEYS = ["kelurahan_id", "ts"]
@@ -164,7 +164,7 @@ def kelurahan_static() -> pd.DataFrame:
     boundaries = gpd.read_file(paths.boundaries() / latest["path"]).to_crs(CRS)
     boundaries["area_km2"] = boundaries.geometry.area / 1e6
     out = boundaries.drop(columns="geometry").merge(per, on="kelurahan_id", how="inner")
-    out["coverage"] = np.clip(out["cells"] * (pilot_grid().res ** 2 / 1e6) / out["area_km2"], 0, 1)
+    out["coverage"] = np.clip(out["cells"] * (map_grid().res ** 2 / 1e6) / out["area_km2"], 0, 1)
     out.attrs["boundaries_version"] = latest["boundaries_version"]
     return out
 
@@ -258,4 +258,4 @@ def archive_daily(day: date) -> None:
         with rasterio.open(path) as src:
             stack.append(src.read(1).astype(float))
     if len(stack) == 24:
-        raster.write_cog(target, np.mean(stack, axis=0), pilot_grid())
+        raster.write_cog(target, np.mean(stack, axis=0), map_grid())

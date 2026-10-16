@@ -8,7 +8,7 @@ from typing import Any
 
 from hirup_ml.config import load_config
 from hirup_pipelines import paths, store
-from hirup_pipelines.settings import TIMEZONE, data_dir, pilot_bbox
+from hirup_pipelines.settings import TIMEZONE, data_dir, map_bbox
 
 
 def history(run_dir: Path, generated_at: datetime) -> Path | None:
@@ -27,7 +27,7 @@ def history(run_dir: Path, generated_at: datetime) -> Path | None:
     for key, values in hourly.groupby(keys):
         quantiles = values.quantile([0.1, 0.5, 0.9])
         hours[str(key)] = dict(zip(("p10", "p50", "p90"), map(float, quantiles), strict=True))
-    box = pilot_bbox()
+    box = map_bbox()
     target = run_dir / "history.json"
     store.write_json(
         {
