@@ -24,11 +24,12 @@ directory="$(cd -- "$(dirname -- "$0")" && pwd)"
     printf 'This tested deployment profile targets x86-64.\n' >&2; exit 1;
 }
 if command -v docker >/dev/null 2>&1; then
-    others="$(docker ps --filter 'label!=com.docker.compose.project=hirup-prod' -q)"
-    [[ -z "$others" ]] || { printf 'Other containers found; review bootstrap manually.\n' >&2; exit 1; }
+    # Count containers outside project hirup-prod (an unlabelled container prints an empty line).
+    others="$(docker ps --format '{{.Label "com.docker.compose.project"}}' | grep -cvx hirup-prod || true)"
+    [[ "$others" == 0 ]] || { printf 'Other containers found; review bootstrap manually.\n' >&2; exit 1; }
 fi
 apt-get update
-apt-get install -y ca-certificates curl ufw python3
+apt-get install -y ca-certificates curl ufw python3 make git
 install -m 0755 -d /etc/apt/keyrings
 curl --fail --location --retry 3 https://download.docker.com/linux/ubuntu/gpg \
     -o /etc/apt/keyrings/docker.asc
@@ -40,8 +41,9 @@ apt-get update
 apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 systemctl enable --now docker
 # This VM is dedicated to Hirup; do not alter another application's Docker ingress.
-others="$(docker ps --filter 'label!=com.docker.compose.project=hirup-prod' -q)"
-[[ -z "$others" ]] || { printf 'Other containers found; review firewall manually.\n' >&2; exit 1; }
+# Count containers outside project hirup-prod (an unlabelled container prints an empty line).
+others="$(docker ps --format '{{.Label "com.docker.compose.project"}}' | grep -cvx hirup-prod || true)"
+[[ "$others" == 0 ]] || { printf 'Other containers found; review firewall manually.\n' >&2; exit 1; }
 if ! getent passwd hirup >/dev/null; then
     groupadd --gid 10001 hirup
     useradd --uid 10001 --gid 10001 --home-dir /var/lib/hirup --create-home \

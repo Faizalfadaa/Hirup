@@ -129,6 +129,48 @@ defaults: plan 10/minute with burst 5, advice 3/minute with burst 2. Rejection i
 because their frozen contract does not declare it. Access/request-error logging
 is disabled at the proxies so URLs containing locations are not persisted.
 
+## Automatic deployment from main
+
+`main` is the release branch. Other branches merge into it through reviewed pull
+requests once stable. After the `ci` workflow succeeds for a push to `main`,
+`.github/workflows/deploy.yml` connects to the VM over SSH and runs
+`/usr/local/sbin/hirup-deploy <commit-sha>` (source: `infra/deploy/deploy-main.sh`),
+streaming a git bundle of `main` on stdin, so the VM holds no repository credentials.
+The script fetches that bundle, refuses a commit that is not on `main` or a dirty
+checkout, builds `hirup-api:<sha>` with `deploy-image` and calls `ops.py release`.
+Release health gating and automatic rollback are unchanged, so a deployment fails
+(red in Actions, previous image restored) until the real AQ inputs pass readiness.
+Only the API image is updated; graphs, P2 data and `/etc/hirup/*.env` stay on the VM.
+A manual re-deploy of the current `main` is available as *Run workflow* on `deploy`.
+
+One-time setup on the VM (root):
+
+```bash
+apt-get install -y make
+install -o root -g root -m 0755 infra/deploy/deploy-main.sh /usr/local/sbin/hirup-deploy
+useradd --system --create-home --home-dir /home/hirup-deploy --shell /bin/sh hirup-deploy
+passwd -l hirup-deploy
+echo 'hirup-deploy ALL=(root) NOPASSWD: /usr/local/sbin/hirup-deploy' > /etc/sudoers.d/hirup-deploy
+chmod 0440 /etc/sudoers.d/hirup-deploy && visudo -cf /etc/sudoers.d/hirup-deploy
+```
+
+Add the Actions public key to `/home/hirup-deploy/.ssh/authorized_keys` (dir 0700,
+file 0600, owned by `hirup-deploy`) with a forced command, so the key can only
+trigger the script (no shell, PTY or forwarding):
+
+```text
+restrict,command="sudo -n /usr/local/sbin/hirup-deploy \"$SSH_ORIGINAL_COMMAND\"" ssh-ed25519 AAAA... hirup-github-actions
+```
+
+In GitHub, add repository secrets (Settings → Secrets and variables → Actions):
+`DEPLOY_HOST` (VM DNS name), `DEPLOY_SSH_KEY` (the Actions private key,
+pasted by its owner; never into chat or Git) and `DEPLOY_KNOWN_HOSTS` (output of
+`ssh-keyscan -t ed25519 <DEPLOY_HOST>`). A repository admin can later move them to a
+`production` environment with required reviewers. Protect `main` with a branch ruleset that
+requires a pull request and the `ci` status checks and blocks force pushes and
+deletion. When `deploy-main.sh` changes on `main`, reinstall it on the VM with the
+`install` command above; the running copy is not updated automatically.
+
 ## Monitor uptime and enable P2 only when ready
 
 Create `/etc/hirup/monitor.env` (root-owned, group hirup, mode 0640) with
