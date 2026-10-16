@@ -1,0 +1,58 @@
+name: deploy
+
+# Release main to the production VM after CI passes on a push to main.
+# Setup (secrets, VM user): infra/deploy/RUNBOOK.md "Automatic deployment from main".
+on:
+  workflow_run:
+    workflows: [ci]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  vm:
+    if: >-
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      SHA: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Bundle main
+        run: git bundle create "$RUNNER_TEMP/main.bundle" HEAD main
+      - name: Prepare SSH
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/deploy_key ~/.ssh/known_hosts
+      - name: Release ${{ env.SHA }}
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+        # The VM key is restricted to a forced command: the SHA is its argument and the
+        # bundle of main arrives on stdin, so the VM needs no repository credentials.
+        run: >-
+          ssh -i ~/.ssh/deploy_key -o BatchMode=yes -o StrictHostKeyChecking=yes
+          -o ServerAliveInterval=30 "hirup-deploy@$DEPLOY_HOST" "$SHA"
+          < "$RUNNER_TEMP/main.bundle"
+      - name: Remove SSH key
+        if: always()
+        run: rm -f ~/.ssh/deploy_key
