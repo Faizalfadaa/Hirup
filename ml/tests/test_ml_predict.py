@@ -185,9 +185,17 @@ def test_drift_alarm_switches_to_the_fallback(toy):
 def test_tile_geometry_and_colours():
     xs, ys = raster.tile_range(12)
     assert len(xs) * len(ys) <= 9
-    assert (raster.colourise(np.array([0.0]))[0] == [0, 176, 80]).all()
-    assert (raster.colourise(np.array([15.5]))[0] == [0, 112, 192]).all()
-    assert (raster.colourise(np.array([900.0]))[0] == [0, 0, 0]).all()
+    # Flat colour per ISPU category; an upper bound still belongs to its own category.
+    colours = raster.colourise(np.array([0.0, 15.5, 15.6, 55.4, 55.5, 150.5, 900.0]))
+    assert colours.tolist() == [
+        [0, 176, 80],
+        [0, 176, 80],
+        [0, 112, 192],
+        [0, 112, 192],
+        [255, 192, 0],
+        [255, 0, 0],
+        [0, 0, 0],
+    ]
 
 
 def test_env_lists_every_manifest_slot():

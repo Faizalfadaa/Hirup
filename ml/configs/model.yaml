@@ -60,11 +60,11 @@ tiles:
   leads: [0, 1] # hours rendered: the nowcast and the next hour
   keep_hours: 6
   alpha: 170
-  # Colour anchors at the ISPU PM2.5 category bounds; colours are interpolated between them.
+  # One flat colour per ISPU PM2.5 category (no blending between categories).
   ispu:
-    source: "Permen LHK No. P.14/MENLHK/SETJEN/KUM.1/7/2020 tentang ISPU, lampiran (PM2.5, 24 jam)"
-    verified_by: null
-    note: "TODO(verify): breakpoints and category colours entered from memory; P4 must check them."
+    source: "Permen LHK No. P.14/MENLHK/SETJEN/KUM.1/7/2020 tentang ISPU: Lampiran I hlm. 10 (PM2.5 24 jam: 15,5 / 55,4 / 150,4 / 250,4 / 500 ug/m3) dan Lampiran II hlm. 14 (Hijau, Biru, Kuning, Merah, Hitam); salinan JDIH BPK peraturan.bpk.go.id/Details/163466"
+    verified_by: "Tengku Naufal Saqib (P2), 2026-10-16"
+    note: "Bounds are for 24-hour means; hourly tiles use them only as an estimated colour scale, not as an ISPU category. The regulation names colours, not RGB: the RGB values are a team choice."
     categories: # [name, upper bound ug/m3, RGB]
       - [baik, 15.5, [0, 176, 80]]
       - [sedang, 55.4, [0, 112, 192]]
