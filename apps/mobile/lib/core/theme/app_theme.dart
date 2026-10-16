@@ -32,17 +32,18 @@ abstract final class AppTheme {
     final base = ThemeData(useMaterial3: true, colorScheme: scheme);
     return base.copyWith(
       scaffoldBackgroundColor: AppColors.paper,
-      textTheme: base.textTheme.apply(
-        bodyColor: AppColors.ink900,
-        displayColor: AppColors.ink900,
-        fontFamily: 'sans-serif',
-      ).copyWith(
-        displaySmall: const TextStyle(fontSize: 34, height: 1.24, fontWeight: FontWeight.w700),
-        headlineMedium: const TextStyle(fontSize: 28, height: 1.28, fontWeight: FontWeight.w700),
-        titleLarge: const TextStyle(fontSize: 21, height: 1.38, fontWeight: FontWeight.w700),
-        titleMedium: const TextStyle(fontSize: 18, height: 1.44, fontWeight: FontWeight.w700),
-        bodyMedium: const TextStyle(fontSize: 14, height: 1.57),
-        labelLarge: const TextStyle(fontSize: 14, height: 1.42, fontWeight: FontWeight.w700),
+      textTheme: base.textTheme.copyWith(
+        displaySmall: const TextStyle(fontFamily: 'sans-serif', fontSize: 34, height: 1.24, fontWeight: FontWeight.w700, color: AppColors.ink900),
+        headlineMedium: const TextStyle(fontFamily: 'sans-serif', fontSize: 28, height: 1.28, fontWeight: FontWeight.w700, color: AppColors.ink900),
+        headlineSmall: const TextStyle(fontFamily: 'sans-serif', fontSize: 24, height: 1.3, fontWeight: FontWeight.w700, color: AppColors.ink900),
+        titleLarge: const TextStyle(fontFamily: 'sans-serif', fontSize: 21, height: 1.38, fontWeight: FontWeight.w700, color: AppColors.ink900),
+        titleMedium: const TextStyle(fontFamily: 'sans-serif', fontSize: 18, height: 1.44, fontWeight: FontWeight.w700, color: AppColors.ink900),
+        titleSmall: const TextStyle(fontFamily: 'sans-serif', fontSize: 14, height: 1.4, fontWeight: FontWeight.w700, color: AppColors.ink900),
+        bodyLarge: const TextStyle(fontFamily: 'sans-serif', fontSize: 16, height: 1.5, color: AppColors.ink900),
+        bodyMedium: const TextStyle(fontFamily: 'sans-serif', fontSize: 14, height: 1.57, color: AppColors.ink900),
+        bodySmall: const TextStyle(fontFamily: 'sans-serif', fontSize: 12, height: 1.5, color: AppColors.ink600),
+        labelLarge: const TextStyle(fontFamily: 'sans-serif', fontSize: 14, height: 1.42, fontWeight: FontWeight.w700, color: AppColors.ink900),
+        labelMedium: const TextStyle(fontFamily: 'sans-serif', fontSize: 12, height: 1.4, fontWeight: FontWeight.w600, color: AppColors.ink700),
       ),
       appBarTheme: const AppBarTheme(
         backgroundColor: AppColors.paper,
@@ -77,6 +78,10 @@ abstract final class AppTheme {
       inputDecorationTheme: const InputDecorationTheme(
         filled: true,
         fillColor: Colors.white,
+        labelStyle: TextStyle(color: AppColors.ink600),
+        floatingLabelStyle: TextStyle(color: AppColors.brand600, fontWeight: FontWeight.w700),
+        hintStyle: TextStyle(color: AppColors.ink600),
+        iconColor: AppColors.ink700,
         border: OutlineInputBorder(
           borderRadius: BorderRadius.all(Radius.circular(16)),
           borderSide: BorderSide(color: AppColors.stroke),
