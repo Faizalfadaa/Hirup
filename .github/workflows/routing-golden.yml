@@ -78,7 +78,7 @@ jobs:
         run: |
           make -f infra/Makefile ci-config
           make -f infra/Makefile ci-up
-      - name: Seven HTTP endpoints and 30 cold golden OD cases
+      - name: Eight HTTP endpoints and 30 cold golden OD cases
         run: make -f infra/Makefile ci-test
       - name: Upload redacted regression reports
         if: always()

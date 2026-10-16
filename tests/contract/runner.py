@@ -26,6 +26,7 @@ SHOULD = {
     "GET /v1/routes/departure-advice",
     "GET /v1/aq/forecast",
     "GET /v1/aq/daily-summary",
+    "GET /v1/insights/kelurahan",
 }
 CHECKS = [
     checks.not_a_server_error,
@@ -74,13 +75,24 @@ def guided_case(schema: Any, label: str, day: date) -> Case:
         )
     if path == "/v1/health":
         return operation.Case()
+    if path == "/v1/insights/kelurahan":
+        from datetime import timedelta
+
+        return operation.Case(
+            query={
+                "from": (day - timedelta(days=2)).isoformat(),
+                "to": (day - timedelta(days=1)).isoformat(),
+            }
+        )
     if "tiles" in path:
-        return operation.Case(path_parameters={"z": 0, "x": 0, "y": 0})
+        return operation.Case(path_parameters={"z": 0, "x": 0, "y": 0}, query={"ts": around})
     query: dict[str, Any] = {"lat": POINT.lat, "lon": POINT.lon}
     if path == "/v1/aq/forecast":
         query["hours"] = 1
     elif path == "/v1/aq/daily-summary":
         query["date"] = day.isoformat()
+    elif path == "/v1/aq/point":
+        query["ts"] = around
     return operation.Case(query=query)
 
 
@@ -135,7 +147,7 @@ def operations(document: dict[str, Any]) -> tuple[list[str], list[dict[str, str]
                 excluded.append(
                     {
                         "operation": label,
-                        "reason": "pending insights merge" if "insights" in path else "Could scope",
+                        "reason": "Could scope",
                     }
                 )
     return selected, excluded

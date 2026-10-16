@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import os
+import sys
 import zipfile
 from pathlib import Path
 
@@ -201,6 +203,25 @@ def test_csv_with_bom(tmp_path: Path) -> None:
     content = tables()
     content["stops.txt"] = "\ufeff" + content["stops.txt"]
     assert validate_feed(write_feed(tmp_path / "bom.zip", content))["stops"] == 2
+
+
+def test_new_staged_directory_allows_host_marker_and_repeated_build(tmp_path: Path) -> None:
+    write_feed(tmp_path / "data/gtfs/transjakarta.gtfs.zip")
+    osm = tmp_path / "data/osm/pilot.osm.pbf"
+    osm.parent.mkdir(parents=True)
+    osm.write_bytes(b"test OSM")
+    configs = tmp_path / "infra/otp"
+    configs.mkdir(parents=True)
+    for name in ("build-config.json", "router-config.json", "otp-config.json"):
+        (configs / name).write_text("{}")
+    stage(tmp_path)
+    marker = tmp_path / "data/otp/.build-incomplete"
+    marker.touch()
+    stage(tmp_path)
+    marker.unlink()
+    assert (marker.parent / "transjakarta.gtfs.zip").is_file()
+    if sys.platform != "win32":
+        assert marker.parent.stat().st_uid == os.getuid()
 
 
 def test_csv_missing_fields_fail(tmp_path: Path) -> None:

@@ -47,6 +47,25 @@ def history():
     return HistoricalAQProvider(HistoricalAQInput.model_validate(history_document()))
 
 
+def test_uncorrected_cams_forecast_uses_sourced_history(tmp_path: Path) -> None:
+    paths = forecast_files(tmp_path)
+    for path in paths:
+        raw = json.loads(path.read_text())
+        raw["metrics"] = {"forecast_model_corrected": 0.0}
+        path.write_text(json.dumps(raw))
+    cog = CogAQProvider(tmp_path, paths, bounds=BOUNDS, allow_synthetic=True)
+    try:
+        service = ForecastService(BOUNDS, cog, history(), allow_synthetic=True, now=lambda: NOW)
+        result = service.forecast(POINT, 2)
+        assert result.source == "historical_mean"
+        assert result.data_quality == "approximated"
+        service.historical = None
+        with pytest.raises(AQUnavailableError):
+            service.forecast(POINT, 2)
+    finally:
+        cog.close()
+
+
 def forecast_files(root: Path, count=2):
     paths = []
     for lead in range(1, count + 1):

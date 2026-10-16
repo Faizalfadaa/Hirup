@@ -47,6 +47,8 @@ def cog_window(
         if (forecast_only or valid_hour > hour_key(now)) and manifest.kind != "forecast":
             raise AQUnavailableError("Future hours require corrected forecasts")
         if manifest.kind == "forecast":
+            if (manifest.metrics or {}).get("forecast_model_corrected") == 0:
+                raise AQUnavailableError("Uncorrected IDW/CAMS is not a model forecast")
             if (
                 manifest.lead_hours < 1
                 or hour_key(manifest.generated_at) + timedelta(hours=manifest.lead_hours)

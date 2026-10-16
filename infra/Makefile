@@ -7,7 +7,7 @@ SHELL := bash
 .PHONY: backend-api golden-od contract-http
 .PHONY: ci-config ci-up ci-test ci-down
 .PHONY: deploy-image deploy-test-image deploy-config deploy-monitor deploy-release deploy-rollback
-.PHONY: deploy-local-test
+.PHONY: deploy-local-test deploy-pipeline-image
 DEPLOY_API_IMAGE ?= hirup-api:local-review
 BACKEND_HOST_PORT ?= 8002
 
@@ -26,6 +26,7 @@ infra-help:
 	@echo "contract-http  Check live localhost HTTP against the frozen API contract"
 	@echo "ci-config / ci-up / ci-test / ci-down  Validate, start, test and clean an isolated CI stack"
 	@echo "deploy-image / deploy-test-image  Build production or fixture-only API image"
+	@echo "deploy-pipeline-image  Build the separate P2 hourly worker image"
 	@echo "deploy-config / deploy-monitor / deploy-release / deploy-rollback  VM operations (see runbook)"
 
 data-routing:
@@ -91,6 +92,9 @@ deploy-image:
 
 deploy-test-image:
 	docker build --target integration -f infra/deploy/API.Dockerfile -t "$(DEPLOY_API_IMAGE)" .
+
+deploy-pipeline-image:
+	docker build --target pipeline -f infra/deploy/API.Dockerfile -t "$(DEPLOY_API_IMAGE)" .
 
 deploy-config:
 	python3 infra/deploy/ops.py config $(DEPLOY_ARGS)

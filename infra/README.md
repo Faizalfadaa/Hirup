@@ -1,5 +1,23 @@
 # Hirup routing infrastructure
 
+Current handoff: [backend architecture/privacy](BACKEND.md),
+[parameter verification queue](PARAMETER_REVIEW.md),
+[Azure deployment preparation](deploy/AZURE.md) and
+[production runbook](deploy/RUNBOOK.md).
+
+Linux graph-build containers now use the invoking host UID/GID, including
+tools, OSM conversion, OSRM and OTP. This prevents root-owned staged directories
+from blocking host-side markers and GitHub cache handling. Windows Docker Desktop
+keeps its own permission mapping. Pre-existing root-owned Linux inputs must be
+reviewed by their administrator; these scripts do not recursively change owners
+or permissions. A fresh hosted cache-miss build and later cache hit remain
+required acceptance evidence after publication.
+
+CI engine preflight retries only transport failures (at most three attempts per
+variant). Invalid/no-transit responses fail immediately. Its redacted
+`initialization.json` records attempts and success/failure even on failure.
+Preflight is excluded from latency; timed golden requests never retry.
+
 This stack builds a pilot street graph for OTP and separate OSRM graphs for cars
 and motorcycles. It is the T2 infrastructure lane; the API container is a readiness
 placeholder until the backend is merged.
@@ -1078,3 +1096,109 @@ releases. Reports/CA certificate remain under ignored `data/deploy-validation/`.
 Real VM/DNS/ACME renewal, SSH/firewall exposure, reboot persistence, P2 timer
 execution, real-AQ conformance and production latency still require verification
 after choosing a server. No cloud resource is provisioned by these Make targets.
+
+### T6.4c: sourced kelurahan aggregates
+
+`GET /v1/insights/kelurahan?from=2026-10-12&to=2026-10-13` returns the mean
+daily P50 for each declared kelurahan over an inclusive WIB date range. Each
+day must have complete 24-hour coverage for every region in the boundary
+roster. For two complete daily means of 10 and 30 ug/m3, the period mean is
+20 ug/m3. This combines daily means of equal duration and a consistent regional
+footprint. It does not aggregate route histories or any user-location data.
+
+Set the new `HIRUP_KELURAHAN_SUMMARIES` name to a local UTF-8 JSON publication.
+The adapter in `services/exposure/kelurahan.py` validates the internal shape below;
+it does not modify the frozen HTTP or raster contracts. P2 must export or adapt
+its sourced aggregates to this shape before real-data integration can run.
+
+| JSON field | Required meaning |
+| --- | --- |
+| `source` | Nonblank provenance for the raster/CAMS inputs and administrative boundaries |
+| `aggregation_method` | Nonblank methodology for the spatial hourly P50 aggregation and complete daily means; use the same footprint and weights on every day |
+| `units` | Exactly `ug/m3` |
+| `boundaries_version` | Version of the static GeoJSON used by the client |
+| `regions` | Nonempty list of `kelurahan_id`, `name`, `kecamatan`; IDs are unique and join to that boundary version |
+| `days` | Nonempty list of daily records, with unique WIB `date` values |
+| `days[].boundaries_version` | Must match the publication's boundary version |
+| `days[].generated_at` | ISO 8601 with a timezone; publication must already exist |
+| `days[].source_kind` | `model` for model-raster aggregates, or `cams` for sourced CAMS fallback |
+| `days[].model_version` | Nonblank for `model`; may be absent/null for `cams` |
+| `days[].contains_forecast` | Required boolean; true if any contributing hour is a forecast |
+| `days[].data_quality` | `real`, `approximated`, or explicitly test-only `synthetic` |
+| `days[].items` | Exactly one item for every roster ID, with `kelurahan_id`, finite non-negative numeric `mean_pm25`, and `hours_covered` |
+| `days[].items[].hours_covered` | The integers 0 through 23, each exactly once, in any order; these are WIB hours |
+
+Region metadata belongs to `regions`, while daily concentrations belong to
+`days[].items`. Extra fields are rejected. A complete observed daily aggregate
+must be generated at or after the next WIB midnight. A current/future day whose
+aggregate is published earlier requires `contains_forecast: true`; repeating a
+current-hour concentration under a complete-day label is not a valid producer
+implementation. Model aggregates require the actual producing model version.
+Source and methodology declarations are required, but this adapter does not
+independently recompute raster statistics or verify the GeoJSON roster; P2 and
+the boundary owner must validate those upstream inputs.
+
+All requested dates must be present, every daily region/hour complete, and all
+boundary versions consistent. Missing coverage returns RFC 9457 `503
+data_unavailable`, without partial success. Reversed ranges and malformed/missing
+dates return `400 validation_error`. Dates outside loaded coverage, including
+very wide ranges, return 503 without allocating a calendar for every date.
+Returned items are ordered by ID for stability; this is not a priority ranking.
+
+Quality follows the worst requested daily input. A result containing forecasts
+or CAMS fallback has at least `approximated` quality. Production refuses any
+synthetic day in a publication, even when route demo mode is enabled. The normal
+demo provider does not create insights. Tests use a seeded, explicitly synthetic
+regional fixture only; its values are not production/model/impact evidence.
+
+Startup loads the configured file off the event loop. The existing metadata
+worker also watches this path, including a file first published after startup,
+and reloads it after publication changes or the hour changes. Validation happens
+before replacement. Missing/malformed/unpublished/synthetic updates retain a
+previous valid immutable snapshot; without one, the endpoint stays unavailable.
+Each request uses one snapshot, so concurrent refresh cannot blend publications.
+The JSON is not read per request, and an invalid regional input does not disable
+the planner or the other AQ endpoints. Publish files with an atomic replacement
+after writing and validating a complete document.
+
+`inequality_index` and `priority_rank` remain null. **FR-31 is not complete:**
+normalization, green-space/population inputs, and an agreed published methodology
+are still required. No weights, scientific constants, or priority values are
+invented. Real P2 aggregates and compatible static client boundaries are absent
+from this checkout, so production FR-30 validation also remains pending.
+
+```bash
+uv run pytest -q tests/test_kelurahan.py tests/test_refresh_worker.py services/api/tests tests/contract
+curl --fail-with-body "http://127.0.0.1:8002/v1/insights/kelurahan?from=2026-10-12&to=2026-10-13"
+```
+
+No dependency, database, raster download or contract change is needed. The only
+new configuration name is `HIRUP_KELURAHAN_SUMMARIES` in `.env.example`; keep the
+actual path in the uncommitted local environment.
+
+Final validation passes Ruff lint/format (109 files), strict mypy (59 source
+files), lock consistency and 427 non-integration tests including both live OSRM
+profiles. The 61 new regional tests cover hand-calculated inclusive aggregation,
+coverage/provenance/quality, malformed and missing inputs, WIB boundaries,
+concurrent snapshot refresh, late publication detection and HTTP errors/schema.
+Frozen OpenAPI/schema synchronization is unchanged. Three opt-in integrations
+are deselected in the suite; the golden runner separately exercises Docker.
+Existing rasterio/NumPy deprecation warnings remain.
+
+The cold-cache Docker golden replay passes 30/30, with plan p50 550.7 ms/p95
+2,965.4 ms and AQ-point p95 4.28 ms (zero hits, 33 misses including warm-ups).
+It uses real routing engines and explicitly seeded synthetic AQ. This is a
+regression sample, not production P2 evidence, and does not establish sustained
+3-second Should performance. Real aggregate/boundary validation and FR-31
+methodology remain pending.
+
+### Develop: P1/P2 workspace integration
+
+The combined branch uses an atomic `HIRUP_AQ_PUBLICATION` index, immutable COG
+runs, sourced historical fallback and complete daily kelurahan aggregates.
+See [integration, worker and real-data handoff](deploy/INTEGRATION.md) for the
+current setup and limitations. API, P2 worker and fixture-only image targets
+are separate. HTTP contract checks now include insights, for eight operations.
+`uv run python -m tests.integration.p2_runner` checks all golden OD against
+seeded P2 LightGBM/COG outputs and real Docker routing engines. It is explicitly
+synthetic integration evidence, not a model-accuracy or impact result.

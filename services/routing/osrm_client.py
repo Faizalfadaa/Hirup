@@ -1,5 +1,6 @@
 """Async OSRM adapter; no OD logging and no fabricated congestion multiplier."""
 
+import asyncio
 import math
 from collections.abc import Mapping
 from dataclasses import replace
@@ -23,6 +24,8 @@ class OsrmClient:
         congestion_hourly: Mapping[int, float] | None = None,
         timeout_s: float = 3,
     ) -> None:
+        if not math.isfinite(timeout_s) or timeout_s <= 0:
+            raise ValueError("OSRM timeout must be finite and positive")
         if mode not in {Mode.CAR, Mode.MOTORCYCLE}:
             raise ValueError("OSRM adapter mode must be CAR or MOTORCYCLE")
         if any(not math.isfinite(v) or v <= 0 for v in (congestion_hourly or {}).values()):
@@ -36,9 +39,12 @@ class OsrmClient:
             f"{query.origin.lon},{query.origin.lat};{query.destination.lon},{query.destination.lat}"
         )
         try:
-            response = await self.http.get(
-                f"{self.url}/route/v1/driving/{coordinates}",
-                params={"alternatives": "3", "overview": "full", "geometries": "polyline6"},
+            response = await asyncio.wait_for(
+                self.http.get(
+                    f"{self.url}/route/v1/driving/{coordinates}",
+                    params={"alternatives": "3", "overview": "full", "geometries": "polyline6"},
+                    timeout=self.timeout_s,
+                ),
                 timeout=self.timeout_s,
             )
             response.raise_for_status()
@@ -81,5 +87,5 @@ class OsrmClient:
                     )
                 result = revised
             return tuple(result)
-        except (httpx.HTTPError, ValueError, KeyError, TypeError):
+        except (TimeoutError, httpx.HTTPError, ValueError, KeyError, TypeError):
             return ()

@@ -24,8 +24,9 @@ format: ## Apply ruff fixes and formatting
 	uv run ruff check --fix .
 	uv run ruff format .
 
-typecheck: ## Mypy (strict) on services
+typecheck: ## Mypy (strict) on services, pipelines and ml
 	uv run mypy services
+	uv run mypy --config-file pipelines/mypy.ini pipelines/src ml/src
 
 test: ## Unit tests (integration tests excluded)
 	uv run pytest -q -m "not integration"

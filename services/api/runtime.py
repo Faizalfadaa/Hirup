@@ -27,7 +27,9 @@ from services.exposure.daily_summary import DailySummaryService
 from services.exposure.engine import Mode, Quantiles
 from services.exposure.forecast import ForecastService
 from services.exposure.geometry import BoundingBox, Point, hour_key
+from services.exposure.kelurahan import KelurahanService
 from services.exposure.params import ExposureParams, load_params
+from services.exposure.publication import Publication
 from services.routing.active_graph import load_graph
 from services.routing.active_params import DEFAULT_PATH, load_active_params
 from services.routing.active_router import ActiveRouter
@@ -68,6 +70,18 @@ class Runtime:
     advice_cache: PlanCache | None = None
     forecast: ForecastService | None = None
     daily_summary: DailySummaryService | None = None
+    kelurahan: KelurahanService | None = None
+    data_root: Path = ROOT / "data"
+
+    def configure_kelurahan(self, path: Path | None = None) -> None:
+        self.kelurahan = KelurahanService(path)
+        if path is not None:
+            try:
+                self.kelurahan.reload()
+            except (ValueError, OSError):
+                logging.getLogger(__name__).warning(
+                    "Regional aggregate input unavailable; insights require complete coverage"
+                )
 
     def configure_daily_summary(self, historical: HistoricalAQProvider | None = None) -> None:
         if self.params is not None:
@@ -134,13 +148,72 @@ class Runtime:
 
     @classmethod
     def from_env(cls, http: httpx.AsyncClient, env: Mapping[str, str] | None = None) -> "Runtime":
-        settings = os.environ if env is None else env
+        original = dict(os.environ if env is None else env)
+
+        def build(settings: Mapping[str, str]) -> "Runtime":
+            opened: list[CogAQProvider] = []
+            try:
+                return cls._from_env(http, settings, opened)
+            except BaseException:
+                # A constructor failure occurs before the caller receives the runtime.
+                # Close its readers here, on the same owner thread that opened them.
+                for reader in opened:
+                    reader.close()
+                raise
+
+        try:
+            return build(original)
+        except (ValueError, OSError, KeyError, TypeError, AttributeError):
+            if not original.get("HIRUP_AQ_PUBLICATION") or original.get(
+                "HIRUP_DEMO", ""
+            ).lower() in {"true", "1"}:
+                raise
+            clean = {
+                key: value
+                for key, value in original.items()
+                if key
+                not in {
+                    "HIRUP_AQ_PUBLICATION",
+                    "HIRUP_AQ_MANIFESTS",
+                    "HIRUP_AQ_INPUTS",
+                    "HIRUP_CITY_MEDIANS",
+                    "HIRUP_AQ_HISTORY",
+                    "HIRUP_KELURAHAN_SUMMARIES",
+                }
+            }
+            logging.getLogger(__name__).warning("Invalid AQ publication; keeping routing for retry")
+            return build(clean)
+
+    @classmethod
+    def _from_env(
+        cls, http: httpx.AsyncClient, env: Mapping[str, str], opened: list[CogAQProvider]
+    ) -> "Runtime":
+        settings = dict(os.environ if env is None else env)
         # httpx logs full URLs at INFO; those can contain origins or credentials.
         logging.getLogger("httpx").setLevel(logging.WARNING)
         logging.getLogger("httpcore").setLevel(logging.WARNING)
         data = Path(settings.get("HIRUP_DATA_DIR") or ROOT / "data")
         bounds = pilot_bounds()
         demo = settings.get("HIRUP_DEMO", "").lower() in {"true", "1"}
+        publication = None
+        if not demo and settings.get("HIRUP_AQ_PUBLICATION"):
+            try:
+                publication = Publication.load(data, Path(settings["HIRUP_AQ_PUBLICATION"]))
+                if publication.generated_at > datetime.now(UTC):
+                    raise AQUnavailableError("AQ publication is not available yet")
+                settings.update(publication.settings())
+            except (ValueError, OSError):
+                # Keep the configured router alive; hourly refresh can load the first publication.
+                publication = None
+                for name in (
+                    "HIRUP_AQ_MANIFESTS",
+                    "HIRUP_AQ_INPUTS",
+                    "HIRUP_CITY_MEDIANS",
+                    "HIRUP_AQ_HISTORY",
+                    "HIRUP_KELURAHAN_SUMMARIES",
+                ):
+                    settings.pop(name, None)
+                logging.getLogger(__name__).warning("AQ publication unavailable; waiting for P2")
         params, active_params = load_params(), load_active_params()
         cog = None
         demo_range = None
@@ -157,6 +230,7 @@ class Runtime:
         else:
             paths = [Path(name) for name in json.loads(settings.get("HIRUP_AQ_MANIFESTS") or "[]")]
             cog = CogAQProvider(data, [], bounds=bounds)
+            opened.append(cog)
             try:
                 cog.reload(paths)
             except AQUnavailableError:
@@ -185,6 +259,8 @@ class Runtime:
                 }
             provider = FallbackAQProvider(cog, IdwAQProvider(stations, bounds, cams=cams))
         aq = AQService(provider, bounds, tiles_dir=data / "tiles", demo_range=demo_range)
+        if publication is not None:
+            aq.tiles_available = publication.tiles_available
         active = None
         graph_path = Path(settings.get("HIRUP_ACTIVE_GRAPH") or data / "graphs/active.json.gz")
         if graph_path.is_file() and settings.get("HIRUP_TRUNK_PENALTY"):
@@ -235,6 +311,7 @@ class Runtime:
         if isinstance(planner.transit, OtpClient):
             planner.transit.search_window_s = 900
         runtime = cls(aq, planner, params, active, cog, model_version)
+        runtime.data_root = data
         runtime.configure_plan_cache()
         historical = None
         history_path = settings.get("HIRUP_AQ_HISTORY")
@@ -248,6 +325,8 @@ class Runtime:
         runtime.configure_advice(demo=demo, historical=historical)
         runtime.configure_forecast(historical=historical)
         runtime.configure_daily_summary(historical=historical)
+        kelurahan_path = settings.get("HIRUP_KELURAHAN_SUMMARIES")
+        runtime.configure_kelurahan(Path(kelurahan_path) if kelurahan_path else None)
         if demo:
             runtime.demo_reference = float(settings["HIRUP_DEMO_REFERENCE_PM25"])
         elif settings.get("HIRUP_CITY_MEDIANS"):

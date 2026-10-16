@@ -93,6 +93,8 @@ class OtpClient:
         timeout_s: float = 3.2,
         available_modes: set[str] | None = None,
     ) -> None:
+        if not math.isfinite(timeout_s) or timeout_s <= 0:
+            raise ValueError("OTP timeout must be finite and positive")
         self.http, self.url, self.timeout_s = http, url, timeout_s
         self.search_window_s = (
             1800  # Search strategy: departures within 30 min, not an exposure constant.
@@ -114,8 +116,13 @@ class OtpClient:
             "modes": [{"mode": mode} for mode in ("WALK", *modes)],
         }
         try:
-            response = await self.http.post(
-                self.url, json={"query": QUERY, "variables": variables}, timeout=self.timeout_s
+            # HTTPX timeouts bound each I/O phase. Also bound the complete request,
+            # including a server that keeps streaming small chunks indefinitely.
+            response = await asyncio.wait_for(
+                self.http.post(
+                    self.url, json={"query": QUERY, "variables": variables}, timeout=self.timeout_s
+                ),
+                timeout=self.timeout_s,
             )
             response.raise_for_status()
             body = response.json()
@@ -133,7 +140,7 @@ class OtpClient:
                 except (KeyError, ValueError, TypeError, OverflowError):
                     continue
             return tuple(result)
-        except (httpx.HTTPError, ValueError, KeyError, TypeError):
+        except (TimeoutError, httpx.HTTPError, ValueError, KeyError, TypeError):
             return ()
 
     async def candidates(self, query: Query) -> tuple[Candidate, ...]:

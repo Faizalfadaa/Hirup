@@ -9,7 +9,7 @@ ensure_tools
 }
 mkdir -p -- "$REPO_ROOT/data/graphs"
 # Keep complete road ways/nodes; conversion and filtering happen only in Docker.
-docker run --rm \
+docker run --rm "${HOST_USER_OPTIONS[@]}" \
     --mount "type=bind,source=$REPO_HOST/data,target=/data" \
     "$TOOLS_IMAGE" osmium tags-filter /data/osm/pilot.osm.pbf w/highway \
     --overwrite --output /data/graphs/active.osm

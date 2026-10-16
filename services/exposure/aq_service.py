@@ -51,6 +51,7 @@ class AQService:
             tiles_dir,
             demo_range,
         )
+        self.tiles_available = True
 
     def point(self, point: Point, ts: datetime) -> Pm25Samples:
         if not self.bounds.contains(point):
@@ -75,6 +76,8 @@ class AQService:
         ):
             raise OutOfServiceAreaError("Tile is outside the pilot service area")
         if self.demo_range is None:
+            if not self.tiles_available:
+                raise AQUnavailableError("Tile categories are awaiting source verification")
             if self.tiles_dir is None:
                 raise AQUnavailableError("No sourced pre-rendered AQ tiles are configured")
             local = ts.astimezone(ZoneInfo("Asia/Jakarta"))

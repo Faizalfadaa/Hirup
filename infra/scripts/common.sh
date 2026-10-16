@@ -21,6 +21,14 @@ export MSYS_NO_PATHCONV=1
 REPO_HOST="$(host_path "$REPO_ROOT")"
 INFRA_HOST="$(host_path "$INFRA_ROOT")"
 
+# Linux bind mounts preserve numeric ownership. Build files as the invoking user
+# so host-side markers, cache uploads and subsequent builds remain writable.
+# Docker Desktop maps Windows permissions itself; do not pass a Git Bash UID.
+HOST_USER_OPTIONS=()
+if [[ "$(uname -s)" == Linux ]]; then
+    HOST_USER_OPTIONS=(--user "$(id -u):$(id -g)")
+fi
+
 compose() {
     docker compose --project-name hirup-routing \
         --project-directory "$INFRA_HOST" \
@@ -37,7 +45,7 @@ ensure_tools() {
 }
 
 run_python() {
-    docker run --rm \
+    docker run --rm "${HOST_USER_OPTIONS[@]}" \
         --mount "type=bind,source=$REPO_HOST,target=/workspace" \
         --workdir /workspace "$TOOLS_IMAGE" python "$@"
 }
