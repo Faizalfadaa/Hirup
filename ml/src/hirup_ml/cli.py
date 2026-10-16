@@ -77,7 +77,7 @@ def main(argv: list[str] | None = None) -> None:
             print("no models registered; inference serves the IDW + CAMS fallback")
     elif args.command == "env":
         for name, value in api_env().items():
-            print(f"{name}='{value}'")
+            print(f"export {name}='{value}'")
 
 
 if __name__ == "__main__":

@@ -195,3 +195,11 @@ def test_env_lists_every_manifest_slot():
     slots = json.loads(env["HIRUP_AQ_MANIFESTS"])
     assert len(slots) == 3 + 1 + 24
     assert slots[3].endswith("manifests/nowcast.json")
+
+
+def test_env_command_exports_every_variable(capsys):
+    # `eval "$(hirup-ml env)"` must reach child processes such as uvicorn.
+    cli.main(["env"])
+    lines = capsys.readouterr().out.splitlines()
+    assert len(lines) == len(cli.api_env())
+    assert all(line.startswith("export HIRUP_") for line in lines)

@@ -17,7 +17,7 @@ uv run hirup-ml hourly              # reviewed ingest/QC -> complete P2 publicat
 uv run hirup-ml predict --at 2026-10-16T07:00:00+07:00
 uv run hirup-ml insights --from 2026-10-09 --to 2026-10-16 --hours 6 7 8
 uv run hirup-ml status              # model registry
-uv run hirup-ml env                 # environment variables for the API
+eval "$(uv run hirup-ml env)"       # export the variables the API reads, then `make api`
 ```
 
 ## Test
