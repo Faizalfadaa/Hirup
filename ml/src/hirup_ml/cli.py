@@ -36,6 +36,9 @@ def main(argv: list[str] | None = None) -> None:
     fit.add_argument("--trials", type=int, help="Optuna trials (0 = config defaults, no tuning)")
     run = sub.add_parser("predict", help="hourly inference: rasters, manifests, tiles, insights")
     run.add_argument("--at", type=datetime.fromisoformat, help="ISO time with offset (default now)")
+    back = sub.add_parser("backfill", help="past nowcasts per kelurahan for Insight Kota")
+    back.add_argument("--from", dest="start", type=datetime.fromisoformat, required=True)
+    back.add_argument("--to", dest="end", type=datetime.fromisoformat, required=True)
     city = sub.add_parser("insights", help="print the Insight Kota payload for a date range")
     city.add_argument("--from", dest="start", type=date.fromisoformat, required=True)
     city.add_argument("--to", dest="end", type=date.fromisoformat, required=True)
@@ -66,6 +69,11 @@ def main(argv: list[str] | None = None) -> None:
         if args.at is not None and args.at.tzinfo is None:
             parser.error("--at needs a UTC offset, for example 2026-10-16T07:00:00+07:00")
         print(json.dumps(predict.run(args.at), indent=2))
+    elif args.command == "backfill":
+        if args.start.tzinfo is None or args.end.tzinfo is None:
+            parser.error("--from/--to need a UTC offset, for example 2026-10-09T00:00:00+07:00")
+        hours = predict.backfill_insights(args.start, args.end)
+        print(json.dumps({"hours_recorded": hours, "publication": predict.run()}, indent=2))
     elif args.command == "insights":
         print(
             json.dumps(

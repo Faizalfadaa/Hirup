@@ -211,3 +211,17 @@ def test_env_command_exports_every_variable(capsys):
     lines = capsys.readouterr().out.splitlines()
     assert len(lines) == len(cli.api_env())
     assert all(line.startswith("export HIRUP_") for line in lines)
+
+
+def test_backfill_records_past_nowcasts_per_kelurahan_without_rasters(toy):
+    entry = train.train(dataset.load(), n_trials=0)
+    end = toy["last_hour"].to_pydatetime()
+    start = end - timedelta(hours=3)
+    assert predict.backfill_insights(start, end) == 3
+    hourly = store.read_parquet(insights.hourly_path())
+    assert set(hourly["kelurahan_id"]) == {"osm_r1", "osm_r2"}
+    assert len(hourly) == 2 * 3
+    assert set(hourly["kind"]) == {"nowcast"}
+    assert set(hourly["model_version"]) == {entry["model_version"]}
+    assert set(hourly["boundaries_version"]) == {"kelurahan-toy"}
+    assert not list((data_dir() / "rasters").glob("run_*"))  # no rasters, no tiles

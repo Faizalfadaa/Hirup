@@ -282,6 +282,50 @@ def run(at: datetime | None = None, *, now: datetime | None = None) -> dict[str,
     return summary
 
 
+def backfill_insights(start: datetime, end: datetime) -> int:
+    """Nowcast P50 per kelurahan for past hours in [start, end), for Insight Kota only.
+
+    Same inputs, model and post-processing as `run`, but no rasters, forecasts or tiles,
+    so a week over the whole map takes minutes. The next `run` publishes the daily
+    aggregates. Returns the number of hours recorded."""
+    if start.tzinfo is None or end.tzinfo is None:
+        raise ValueError("Backfill times require a UTC offset")
+    model = registry.load_active()
+    generated_at = datetime.now(UTC)
+    hour = start.astimezone(UTC).replace(minute=0, second=0, microsecond=0)
+    recorded = 0
+    while hour < end.astimezone(UTC):
+        inputs = load_inputs(hour)
+        block = idw_series(inputs)
+        if model is not None:
+            mid = np.asarray(
+                model.mean.predict(design(inputs, block, inputs.now, model.feature_names))
+            ).reshape(inputs.grid.shape)
+            quality, version = "real", model.version
+        else:
+            field = fallback_field(inputs, block, inputs.now)
+            if field is None:
+                log.warning("no station or CAMS value at %s; hour skipped", hour.isoformat())
+                hour += timedelta(hours=1)
+                continue
+            mid, quality, version = (
+                field.reshape(inputs.grid.shape),
+                "approximated",
+                FALLBACK_VERSION,
+            )
+        p50 = raster.postprocess(mid, mid, mid)["p50"]
+        valid = inputs.hours[inputs.now].to_pydatetime()
+        manifest = {
+            "generated_at": generated_at.isoformat(),
+            "kind": "nowcast",
+            "model_version": version,
+        }
+        insights.record_hour(inputs.cells, p50, valid, quality, manifest=manifest)
+        recorded += 1
+        hour += timedelta(hours=1)
+    return recorded
+
+
 def publish_manifests(manifests: dict[int, dict[str, Any]], run_dir: Path) -> None:
     """Fill every slot. The API fails its whole reload if one listed manifest is missing, so a
     slot with nothing of its own (first run, skipped hour) repeats the current nowcast."""
